@@ -360,6 +360,8 @@ export interface PlanAnalysisResult {
   id: string;
   sourceFileName: string;
   createdAt: string;
+  /** Which vision provider produced this extraction (stamped by lib/vision-provider.ts). */
+  provider: VisionProvider;
   metadata: PlanMetadata;
   scaleCalibration: ScaleCalibration;
   rooms: Room[];
@@ -377,6 +379,29 @@ export interface PlanAnalysisResult {
 }
 
 // -----------------------------------------------------------------------------
+// Vision provider selection
+// -----------------------------------------------------------------------------
+
+/**
+ * Which AI vision backend performs the plan extraction. Claude and Gemini
+ * both implement the same extraction contract (see lib/plan-extraction-schema.ts)
+ * so results are shaped identically regardless of which one is selected.
+ * Gemini is included specifically so cost-sensitive users (e.g. students) can
+ * run the tool on Google's free tier instead of a paid Anthropic key.
+ */
+export type VisionProvider = "claude" | "gemini";
+
+export interface VisionProviderInfo {
+  id: VisionProvider;
+  label: string;
+  description: string;
+  /** Shown in the UI as a cost/budget hint. */
+  costNote: string;
+  requiredEnvVar: string;
+  getApiKeyUrl: string;
+}
+
+// -----------------------------------------------------------------------------
 // API request/response envelopes
 // -----------------------------------------------------------------------------
 
@@ -385,6 +410,8 @@ export interface AnalyzeRequestBody {
   fileBase64: string;
   fileName: string;
   mimeType: SupportedInputMimeType;
+  /** Which vision provider to use for this analysis request. */
+  provider: VisionProvider;
   /** Optional user-provided scale hint, e.g. "1/4in = 1ft". */
   knownScale?: string;
   /** Optional user-provided reference measurement to aid calibration. */

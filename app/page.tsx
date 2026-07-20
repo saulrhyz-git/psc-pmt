@@ -15,7 +15,7 @@
  * -----------------------------------------------------------------------------
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Building2,
@@ -33,8 +33,19 @@ import PlanViewer from "@/components/PlanViewer";
 import RoomBreakdownTable from "@/components/RoomBreakdownTable";
 import FurnitureOverlay from "@/components/FurnitureOverlay";
 import MaterialEstimator from "@/components/MaterialEstimator";
-import type { AnalysisStatus, AnalyzeResponseBody, PlanAnalysisResult, UploadedFileState } from "@/lib/types";
+import ProviderSelector from "@/components/ProviderSelector";
+import type {
+  AnalysisStatus,
+  AnalyzeResponseBody,
+  PlanAnalysisResult,
+  UploadedFileState,
+  VisionProvider,
+} from "@/lib/types";
 import { formatDimension } from "@/lib/measurement-utils";
+import { VISION_PROVIDERS } from "@/lib/vision-provider-metadata";
+
+/** localStorage key used to remember the student's/user's last provider choice across visits. */
+const PROVIDER_STORAGE_KEY = "plan-analyzer:vision-provider";
 
 type TabKey = "breakdown" | "furniture" | "estimate";
 
@@ -47,12 +58,27 @@ const TABS: { key: TabKey; label: string; icon: typeof Table2 }[] = [
 export default function PlanAnalyzerPage() {
   const [uploadedFile, setUploadedFile] = useState<UploadedFileState | null>(null);
   const [knownScale, setKnownScale] = useState("");
+  // Default to Gemini: it has a free tier, which matters most for students /
+  // no-budget users. Anyone with an Anthropic key can switch to Claude below.
+  const [provider, setProvider] = useState<VisionProvider>("gemini");
   const [status, setStatus] = useState<AnalysisStatus>("idle");
   const [result, setResult] = useState<PlanAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [visibleFurnitureIds, setVisibleFurnitureIds] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<TabKey>("breakdown");
+
+  // Remember the last provider choice across visits (e.g. a classroom of
+  // students who all pick Gemini once and don't want to re-select it).
+  useEffect(() => {
+    const saved = window.localStorage.getItem(PROVIDER_STORAGE_KEY);
+    if (saved === "claude" || saved === "gemini") setProvider(saved);
+  }, []);
+
+  const handleProviderChange = useCallback((next: VisionProvider) => {
+    setProvider(next);
+    window.localStorage.setItem(PROVIDER_STORAGE_KEY, next);
+  }, []);
 
   const handleFileSelected = useCallback((fileState: UploadedFileState) => {
     setUploadedFile(fileState);
@@ -87,6 +113,7 @@ export default function PlanAnalyzerPage() {
           fileBase64,
           fileName: uploadedFile.file.name,
           mimeType: uploadedFile.mimeType,
+          provider,
           knownScale: knownScale.trim() || undefined,
         }),
       });
@@ -104,7 +131,7 @@ export default function PlanAnalyzerPage() {
       setError(err instanceof Error ? err.message : "An unknown error occurred while analyzing the plan.");
       setStatus("error");
     }
-  }, [uploadedFile, knownScale]);
+  }, [uploadedFile, knownScale, provider]);
 
   const criticalCommentCount = useMemo(
     () => result?.spacePlanningComments.filter((c) => c.severity === "critical" || c.severity === "warning").length ?? 0,
@@ -123,6 +150,8 @@ export default function PlanAnalyzerPage() {
           isAnalyzing={status === "analyzing"}
           knownScale={knownScale}
           onKnownScaleChange={setKnownScale}
+          provider={provider}
+          onProviderChange={handleProviderChange}
           onAnalyze={runAnalysis}
           error={error}
         />
@@ -220,6 +249,8 @@ function UploadPanel({
   isAnalyzing,
   knownScale,
   onKnownScaleChange,
+  provider,
+  onProviderChange,
   onAnalyze,
   error,
 }: {
@@ -229,6 +260,8 @@ function UploadPanel({
   isAnalyzing: boolean;
   knownScale: string;
   onKnownScaleChange: (v: string) => void;
+  provider: VisionProvider;
+  onProviderChange: (p: VisionProvider) => void;
   onAnalyze: () => void;
   error: string | null;
 }) {
@@ -240,6 +273,8 @@ function UploadPanel({
         isAnalyzing={isAnalyzing}
         onClear={onClear}
       />
+
+      {!isAnalyzing && <ProviderSelector value={provider} onChange={onProviderChange} disabled={isAnalyzing} />}
 
       {uploadedFile && !isAnalyzing && (
         <div className="flex flex-col gap-3">
@@ -271,7 +306,7 @@ function UploadPanel({
       {isAnalyzing && (
         <div className="flex items-center justify-center gap-2 rounded-lg bg-indigo-50 px-4 py-3 text-sm font-medium text-indigo-700">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Analyzing plan — reading rooms, walls, and dimensions...
+          Analyzing plan with {VISION_PROVIDERS[provider].label} — reading rooms, walls, and dimensions...
         </div>
       )}
 
@@ -297,6 +332,9 @@ function ResultSummaryBar({
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
       <div className="flex flex-wrap items-center gap-4">
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500">
+          Analyzed with {VISION_PROVIDERS[result.provider].label}
+        </span>
         <SummaryStat icon={Ruler} label="Total Area" value={formatDimension(result.metadata.totalArea, { asArea: true })} />
         <SummaryStat icon={Building2} label="Rooms" value={String(result.metadata.totalRoomCount)} />
         <SummaryStat icon={Layers} label="Stories" value={String(result.metadata.stories)} />

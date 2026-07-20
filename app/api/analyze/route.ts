@@ -5,8 +5,8 @@
  *
  * Accepts an uploaded blueprint (image or PDF) as a base64 payload, rasterizes
  * PDFs to a PNG (first page) using pdfjs-dist + node-canvas, sends the resulting
- * image to Claude Vision for structured extraction, and returns a fully computed
- * PlanAnalysisResult.
+ * image to the caller's chosen vision provider (Claude or Gemini) for structured
+ * extraction, and returns a fully computed PlanAnalysisResult.
  *
  * Runtime: Node.js (not Edge) — pdf rendering requires the `canvas` native
  * module, which is unavailable in the Edge runtime.
@@ -14,8 +14,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { analyzePlanImage, ClaudeVisionError } from "@/lib/claude-vision";
-import type { AnalyzeRequestBody, AnalyzeResponseBody, SupportedInputMimeType } from "@/lib/types";
+import { analyzePlanImageWithProvider, VISION_PROVIDERS } from "@/lib/vision-provider";
+import { VisionExtractionError } from "@/lib/plan-extraction-schema";
+import type { AnalyzeRequestBody, AnalyzeResponseBody, SupportedInputMimeType, VisionProvider } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -27,6 +28,7 @@ const SUPPORTED_MIME_TYPES: SupportedInputMimeType[] = [
   "image/webp",
   "application/pdf",
 ];
+const SUPPORTED_PROVIDERS: VisionProvider[] = ["claude", "gemini"];
 
 export async function POST(req: NextRequest): Promise<NextResponse<AnalyzeResponseBody>> {
   let body: AnalyzeRequestBody;
@@ -48,7 +50,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<AnalyzeRespon
   try {
     const { imageBase64, mediaType } = await normalizeToImage(body.fileBase64, body.mimeType, body.fileName);
 
-    const result = await analyzePlanImage({
+    const result = await analyzePlanImageWithProvider(body.provider, {
       imageBase64,
       mediaType,
       fileName: body.fileName,
@@ -58,7 +60,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<AnalyzeRespon
 
     return NextResponse.json({ success: true, result }, { status: 200 });
   } catch (err) {
-    return handleError(err);
+    return handleError(err, body.provider);
   }
 }
 
@@ -76,6 +78,9 @@ function validateRequestBody(body: AnalyzeRequestBody | undefined): string | nul
   }
   if (!body.mimeType || !SUPPORTED_MIME_TYPES.includes(body.mimeType)) {
     return `\`mimeType\` must be one of: ${SUPPORTED_MIME_TYPES.join(", ")}.`;
+  }
+  if (!body.provider || !SUPPORTED_PROVIDERS.includes(body.provider)) {
+    return `\`provider\` must be one of: ${SUPPORTED_PROVIDERS.join(", ")}.`;
   }
 
   // Rough byte-size check on the base64 payload (base64 is ~4/3 the size of raw bytes).
@@ -98,20 +103,22 @@ function validateRequestBody(body: AnalyzeRequestBody | undefined): string | nul
 // PDF -> PNG normalization
 // -----------------------------------------------------------------------------
 
-type ClaudeImageMediaType = "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+type VisionImageMediaType = "image/png" | "image/jpeg" | "image/webp" | "image/gif";
 
 /**
- * Ensures the payload sent to Claude Vision is always a plain raster image.
- * If the upload is a PDF, rasterizes the first page to a PNG using pdfjs-dist
- * for parsing/rendering and node-canvas as the rendering surface.
+ * Ensures the payload sent to the vision provider is always a plain raster
+ * image. If the upload is a PDF, rasterizes the first page to a PNG using
+ * pdfjs-dist for parsing/rendering and node-canvas as the rendering surface.
+ * This step is provider-agnostic and runs before either Claude or Gemini sees
+ * the file.
  */
 async function normalizeToImage(
   fileBase64: string,
   mimeType: SupportedInputMimeType,
   fileName: string
-): Promise<{ imageBase64: string; mediaType: ClaudeImageMediaType }> {
+): Promise<{ imageBase64: string; mediaType: VisionImageMediaType }> {
   if (mimeType !== "application/pdf") {
-    return { imageBase64: fileBase64, mediaType: mimeType as ClaudeImageMediaType };
+    return { imageBase64: fileBase64, mediaType: mimeType as VisionImageMediaType };
   }
 
   try {
@@ -129,7 +136,7 @@ async function normalizeToImage(
     const pdfDocument = await loadingTask.promise;
 
     if (pdfDocument.numPages < 1) {
-      throw new ClaudeVisionError(`"${fileName}" is an empty PDF with no pages.`);
+      throw new VisionExtractionError(`"${fileName}" is an empty PDF with no pages.`);
     }
 
     const page = await pdfDocument.getPage(1);
@@ -149,8 +156,8 @@ async function normalizeToImage(
     const pngBuffer = canvas.toBuffer("image/png");
     return { imageBase64: pngBuffer.toString("base64"), mediaType: "image/png" };
   } catch (err) {
-    if (err instanceof ClaudeVisionError) throw err;
-    throw new ClaudeVisionError(
+    if (err instanceof VisionExtractionError) throw err;
+    throw new VisionExtractionError(
       `Failed to rasterize PDF "${fileName}" for analysis: ${err instanceof Error ? err.message : String(err)}`,
       err
     );
@@ -161,17 +168,18 @@ async function normalizeToImage(
 // Error handling
 // -----------------------------------------------------------------------------
 
-function handleError(err: unknown): NextResponse<AnalyzeResponseBody> {
-  if (err instanceof ClaudeVisionError) {
+function handleError(err: unknown, provider?: VisionProvider): NextResponse<AnalyzeResponseBody> {
+  if (err instanceof VisionExtractionError) {
     // eslint-disable-next-line no-console
-    console.error("[api/analyze] ClaudeVisionError:", err.message, err.cause ?? "");
+    console.error(`[api/analyze] VisionExtractionError (${provider ?? "unknown"}):`, err.message, err.cause ?? "");
     return NextResponse.json({ success: false, error: err.message }, { status: 502 });
   }
 
   // eslint-disable-next-line no-console
-  console.error("[api/analyze] Unexpected error:", err);
+  console.error(`[api/analyze] Unexpected error (${provider ?? "unknown"}):`, err);
+  const providerLabel = provider ? VISION_PROVIDERS[provider]?.label ?? provider : "the selected provider";
   return NextResponse.json(
-    { success: false, error: "An unexpected error occurred while analyzing the plan. Please try again." },
+    { success: false, error: `An unexpected error occurred while analyzing the plan with ${providerLabel}. Please try again.` },
     { status: 500 }
   );
 }
