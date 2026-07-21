@@ -1,12 +1,16 @@
 # Construction Multitool
 
 A small suite of construction tools behind a single login, navigated from a
-collapsible sidebar:
+collapsible sidebar. All monetary values default to the **Philippine Peso
+(₱)** — see `lib/currency-utils.ts`.
 
 - **Tool #1 — AI Plan Analyzer & Redrawer**: upload a blueprint and get an
   AI-driven layout analysis, redraw, and cost estimate.
 - **Tool #2 — Project Management**: track multiple construction projects —
   tasks, schedule, budget, and crew/equipment resources.
+- **Settings & Templates**: AI provider settings and user management
+  (admin-only), plus reusable templates (Budget templates for now) that any
+  signed-in user can create and apply to a project's budget in one click.
 
 ## Tool #1: AI Plan Analyzer & Redrawer
 
@@ -89,9 +93,10 @@ npm run dev
 Open http://localhost:3000 and sign in (see "Access control" above). You can
 then configure API keys two ways:
 
-1. **In-app (recommended for students)** — click **Settings** in the header (or
-   "Configure API keys & models" under the provider picker), paste a Gemini
-   and/or Claude key, and save. This writes to a local, gitignored file
+1. **In-app (recommended for students)** — open the **Settings & Templates**
+   tab in the sidebar (or "Configure API keys & models" under the provider
+   picker on the Plan Analyzer tab), paste a Gemini and/or Claude key under
+   its **Settings** sub-tab, and save. This writes to a local, gitignored file
    (`.ai-settings.local.json`) and takes effect immediately on your next
    analysis — no restart, no editing config files by hand.
 2. **Environment variables** — `cp .env.example .env.local` and set
@@ -99,9 +104,10 @@ then configure API keys two ways:
    environments where the filesystem is read-only (in-app settings need a
    writable project directory).
 
-If both are set, the in-app Settings panel wins. Model overrides
+If both are set, the in-app settings win. Model overrides
 (`GEMINI_VISION_MODEL` / `CLAUDE_VISION_MODEL`) work the same way and can also
-be changed from the Settings panel.
+be changed from the Settings sub-tab. (The AI Providers and Users sub-tab
+content is admin-only — see "Access control" above.)
 
 ### PDF support
 
@@ -141,7 +147,10 @@ dropdown at the top of the tab:
 4. **Gantt Timeline** — a custom, dependency-free schedule view (no charting
    library) built from each task's start/end dates, color-coded by phase.
 5. **Budget Tracker** — total spend vs. total budget, plus a phase-by-phase
-   breakdown of budgeted/spent/remaining per line item.
+   breakdown of budgeted/spent/remaining per line item. Add line items one at
+   a time, or apply a saved Budget template to bulk-add a whole skeleton in
+   one click (see "Settings & Templates" below) — handy for repetitive
+   project types.
 6. **Resource Management** — crew allocation cards (role, % allocation,
    status) and an equipment status table (type, status, assigned to).
 7. **Data Export** — one-click Excel export (`GET /api/projects/:id/export`)
@@ -158,6 +167,23 @@ restrictions (e.g. view-only for students) are a planned future enhancement
 JSON file (`.projects-data.local.json`, see `lib/project-store.ts`), read
 fresh and written back on every mutation. No database. Deleting the file
 resets Project Management back to empty (Tool #1 and login are unaffected).
+
+## Settings & Templates
+
+A sidebar tab with two sub-tabs:
+
+- **Templates** — open to every signed-in user. Create a **Budget template**
+  (a name plus a list of phase/category/budgeted-amount line items) once, then
+  apply it to any project's Budget tab in one click — new line items are
+  added with `spent` starting at ₱0, additively (applying twice, or applying
+  on top of manually-added items, never overwrites existing line items).
+  Stored in a local, gitignored file (`.budget-templates.local.json`, see
+  `lib/template-store.ts`). More template types (e.g. Task templates) can be
+  added later following the same pattern.
+- **Settings** — admin-only: AI provider API keys/models (`AiProviderSettings.tsx`,
+  formerly a gear-icon modal, now embedded here) and user management
+  (`UserManagement.tsx`). Students see an "admin access required" placeholder
+  instead.
 
 ## Project structure
 
@@ -180,18 +206,21 @@ app/
       [id]/bundle/route.ts    # GET project + tasks + budget + crew + equipment in one call
       [id]/tasks/route.ts + [taskId]/route.ts       # Task CRUD
       [id]/budget/route.ts + [lineItemId]/route.ts  # Budget line item CRUD
+      [id]/budget/apply-template/route.ts           # POST — bulk-apply a Budget template
       [id]/crew/route.ts + [memberId]/route.ts      # Crew CRUD
       [id]/equipment/route.ts + [itemId]/route.ts   # Equipment CRUD
       [id]/export/route.ts    # GET — one-click Excel export (SheetJS)
+    templates/
+      budget/route.ts         # GET list / POST create a Budget template
+      budget/[id]/route.ts    # PATCH/DELETE a Budget template
   page.tsx                  # App shell: session gate, sidebar, top bar, active-tool switch
   layout.tsx
   globals.css
 components/
-  Sidebar.tsx                # Collapsible nav between Plan Analyzer and Project Management
+  Sidebar.tsx                # Collapsible nav: Plan Analyzer / Project Management / Settings & Templates
   PlanAnalyzerTool.tsx        # Tool #1's full UI (extracted from app/page.tsx)
   UploadZone.tsx            # Drag-and-drop upload
   ProviderSelector.tsx      # Claude vs. Gemini picker (free-tier note for Gemini)
-  SettingsPanel.tsx          # In-app API key / model settings + user management modal (admin-only)
   UserManagement.tsx          # Admin-only: enroll/remove students, list users
   PlanViewer.tsx             # Split-screen original vs. redrawn artifact
   SVGPlanRenderer.tsx        # Interactive SVG plan: pan/zoom, layer toggles, room highlighting
@@ -204,11 +233,15 @@ components/
     KpiCards.tsx               # Dashboard KPI strip
     TaskList.tsx                # Searchable/filterable task table
     GanttChart.tsx              # Custom CSS-based schedule timeline
-    BudgetTracker.tsx           # Budget vs. spend + phase breakdown
+    BudgetTracker.tsx           # Budget vs. spend + phase breakdown + "Apply Template"
     ResourceManagement.tsx      # Crew cards + equipment table
     ExportButton.tsx            # Triggers the Excel export download
     StatusBadge.tsx             # Shared status pill (task/project/crew/equipment)
     phase-colors.ts             # Deterministic phase -> color mapping
+  settings-templates/
+    SettingsTemplatesTool.tsx   # Sidebar tab orchestrator: Templates / Settings sub-tabs
+    AiProviderSettings.tsx      # AI provider keys/models (admin-only, no modal chrome)
+    BudgetTemplateManager.tsx   # Create/edit/delete Budget templates
 lib/
   plan-extraction-schema.ts  # Shared prompt, JSON schema, and post-processing (provider-agnostic)
   claude-vision.ts            # Anthropic-specific API call mechanics
@@ -220,9 +253,12 @@ lib/
   auth-constants.ts            # Cookie name/expiry constants shared with Edge middleware
   measurement-utils.ts        # Scale calibration + geometry math
   estimate-utils.ts           # Pure material/cost pricing engine (shared client+server)
+  currency-utils.ts            # Shared PHP (₱) currency formatter used app-wide
   project-types.ts             # Tool #2's TypeScript schema (client-safe, no fs/SDK imports)
   project-store.ts             # Tool #2's server-only JSON-file persistence + CRUD
   project-kpi-utils.ts         # Pure KPI math over a ProjectBundle (client-safe)
+  template-types.ts            # Templates' TypeScript schema (client-safe)
+  template-store.ts            # Templates' server-only JSON-file persistence + CRUD
   types.ts                    # Full TypeScript schema for Tool #1 + the app shell
 ```
 

@@ -131,7 +131,7 @@ export function computeMaterialEstimate(rooms: Room[], settings: UnitCostSetting
   const total = round(subtotal + contingencyAmount, 2);
 
   return {
-    currency: "USD",
+    currency: "PHP",
     lineItems,
     subtotal,
     contingencyPercent: settings.contingencyPercent,

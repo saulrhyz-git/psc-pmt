@@ -14,6 +14,7 @@ import * as XLSX from "xlsx";
 import { requireSession } from "@/lib/auth";
 import { getProjectBundle } from "@/lib/project-store";
 import { computeProjectKpis } from "@/lib/project-kpi-utils";
+import { CURRENCY_SYMBOL } from "@/lib/currency-utils";
 
 export const runtime = "nodejs";
 
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest, { params }: RouteParams): Promise<Ne
 
   const overviewSheet = XLSX.utils.aoa_to_sheet([
     ["Project Overview"],
+    [`All monetary values in Philippine Peso (${CURRENCY_SYMBOL})`],
     [],
     ["Name", project.name],
     ["Project In Charge", project.projectInCharge],
@@ -47,14 +49,14 @@ export async function GET(req: NextRequest, { params }: RouteParams): Promise<Ne
     ["Address", project.address ?? ""],
     ["Date Started", project.dateStarted],
     ["Target Completion", project.targetCompletionDate ?? ""],
-    ["Total Budget", project.totalBudget],
+    [`Total Budget (${CURRENCY_SYMBOL})`, project.totalBudget],
     ["Notes", project.notes ?? ""],
     [],
     ["KPIs"],
     ["Active Tasks", kpis.activeTaskCount],
     ["Overall Progress (%)", kpis.overallProgressPercent],
-    ["Total Budgeted", kpis.totalBudgeted],
-    ["Total Spent", kpis.totalSpent],
+    [`Total Budgeted (${CURRENCY_SYMBOL})`, kpis.totalBudgeted],
+    [`Total Spent (${CURRENCY_SYMBOL})`, kpis.totalSpent],
     ["Budget Burn (%)", kpis.budgetBurnPercent],
     ["Active Crew Count", kpis.crewCount],
   ]);
@@ -80,9 +82,9 @@ export async function GET(req: NextRequest, { params }: RouteParams): Promise<Ne
       Phase: b.phase,
       Category: b.category,
       Description: b.description ?? "",
-      Budgeted: b.budgeted,
-      Spent: b.spent,
-      Remaining: b.budgeted - b.spent,
+      [`Budgeted (${CURRENCY_SYMBOL})`]: b.budgeted,
+      [`Spent (${CURRENCY_SYMBOL})`]: b.spent,
+      [`Remaining (${CURRENCY_SYMBOL})`]: b.budgeted - b.spent,
     }))
   );
   XLSX.utils.book_append_sheet(workbook, budgetSheet, "Budget");

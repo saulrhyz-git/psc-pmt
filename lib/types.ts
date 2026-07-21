@@ -309,7 +309,7 @@ export interface MaterialLineItem {
   /** Quantity in the unit specified by `unit` (e.g. sq ft, gallons, linear ft). */
   quantity: number;
   unit: "sq_ft" | "sq_m" | "gallons" | "liters" | "sheets" | "linear_ft" | "linear_m" | "hours" | "each";
-  /** Editable unit cost, in USD by default. */
+  /** Editable unit cost, in PHP (Philippine Peso) by default — see lib/currency-utils.ts. */
   unitCost: number;
   /** quantity * unitCost, kept denormalized for convenience; recomputed on edit. */
   total: number;
@@ -438,7 +438,8 @@ export interface EstimateResponseBody {
 
 // -----------------------------------------------------------------------------
 // In-app AI settings (API keys + model overrides configurable from the UI —
-// see lib/ai-settings.ts, app/api/settings/route.ts, components/SettingsPanel.tsx)
+// see lib/ai-settings.ts, app/api/settings/route.ts,
+// components/settings-templates/AiProviderSettings.tsx)
 // -----------------------------------------------------------------------------
 
 /** Raw shape persisted to the local settings file. Server-only — never sent to the client as-is. */
@@ -543,7 +544,7 @@ export interface ChangePasswordRequestBody {
 // App shell (sidebar navigation between tools — see components/Sidebar.tsx)
 // -----------------------------------------------------------------------------
 
-export type AppTool = "plan-analyzer" | "project-management";
+export type AppTool = "plan-analyzer" | "project-management" | "settings-templates";
 
 // -----------------------------------------------------------------------------
 // UI state helpers

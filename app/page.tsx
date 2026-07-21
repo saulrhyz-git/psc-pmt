@@ -3,22 +3,26 @@
 /**
  * app/page.tsx
  * -----------------------------------------------------------------------------
- * App shell: session gate, collapsible sidebar, and top bar shared by both
- * tools. Tool-specific logic lives in components/PlanAnalyzerTool.tsx (Tool
- * #1) and components/pm/ProjectManagementTool.tsx (Tool #2) — this file only
- * owns session state, sidebar/tool selection, and the AI-settings modal
- * (which is cross-cutting: Settings holds both AI provider keys used by Tool
- * #1 and user management shared by the whole app).
+ * App shell: session gate, collapsible sidebar, and top bar shared by all
+ * three tools. Tool-specific logic lives in components/PlanAnalyzerTool.tsx
+ * (Tool #1), components/pm/ProjectManagementTool.tsx (Tool #2), and
+ * components/settings-templates/SettingsTemplatesTool.tsx (AI settings, user
+ * management, and reusable templates) — this file only owns session state and
+ * sidebar/tool selection.
+ *
+ * Settings used to be a gear-icon modal (components/SettingsPanel.tsx); it's
+ * now a full sidebar tab (see Sidebar.tsx) so it can hold the new Templates
+ * sub-tab alongside AI provider settings and user management.
  * -----------------------------------------------------------------------------
  */
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, LogOut, Settings as SettingsIcon } from "lucide-react";
+import { Loader2, LogOut } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import PlanAnalyzerTool from "@/components/PlanAnalyzerTool";
 import ProjectManagementTool from "@/components/pm/ProjectManagementTool";
-import SettingsPanel from "@/components/SettingsPanel";
+import SettingsTemplatesTool from "@/components/settings-templates/SettingsTemplatesTool";
 import type { AppTool, MeResponseBody, SessionUser } from "@/lib/types";
 
 /** localStorage key remembering whether the sidebar was left collapsed. */
@@ -29,6 +33,7 @@ const ACTIVE_TOOL_KEY = "app-shell:active-tool";
 const TOOL_LABELS: Record<AppTool, string> = {
   "plan-analyzer": "AI Plan Analyzer & Redrawer",
   "project-management": "Project Management",
+  "settings-templates": "Settings & Templates",
 };
 
 export default function AppShellPage() {
@@ -37,13 +42,14 @@ export default function AppShellPage() {
   const [sessionLoading, setSessionLoading] = useState(true);
   const [activeTool, setActiveTool] = useState<AppTool>("plan-analyzer");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
     const savedCollapsed = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
     if (savedCollapsed === "true") setSidebarCollapsed(true);
     const savedTool = window.localStorage.getItem(ACTIVE_TOOL_KEY);
-    if (savedTool === "plan-analyzer" || savedTool === "project-management") setActiveTool(savedTool);
+    if (savedTool === "plan-analyzer" || savedTool === "project-management" || savedTool === "settings-templates") {
+      setActiveTool(savedTool);
+    }
   }, []);
 
   const handleSelectTool = useCallback((tool: AppTool) => {
@@ -113,28 +119,19 @@ export default function AppShellPage() {
       />
 
       <div className="flex min-h-screen flex-1 flex-col">
-        <TopBar
-          title={TOOL_LABELS[activeTool]}
-          sessionUser={sessionUser}
-          onOpenSettings={() => setIsSettingsOpen(true)}
-          onLogout={handleLogout}
-        />
+        <TopBar title={TOOL_LABELS[activeTool]} sessionUser={sessionUser} onLogout={handleLogout} />
 
         <main className="mx-auto w-full max-w-[1600px] flex-1 p-4 sm:p-6 lg:p-8">
-          {activeTool === "plan-analyzer" ? (
+          {activeTool === "plan-analyzer" && (
             <PlanAnalyzerTool
               canConfigureSettings={sessionUser.role === "admin"}
-              onOpenSettings={() => setIsSettingsOpen(true)}
+              onOpenSettings={() => handleSelectTool("settings-templates")}
             />
-          ) : (
-            <ProjectManagementTool />
           )}
+          {activeTool === "project-management" && <ProjectManagementTool />}
+          {activeTool === "settings-templates" && <SettingsTemplatesTool isAdmin={sessionUser.role === "admin"} />}
         </main>
       </div>
-
-      {sessionUser.role === "admin" && (
-        <SettingsPanel open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
-      )}
     </div>
   );
 }
@@ -146,12 +143,10 @@ export default function AppShellPage() {
 function TopBar({
   title,
   sessionUser,
-  onOpenSettings,
   onLogout,
 }: {
   title: string;
   sessionUser: SessionUser;
-  onOpenSettings: () => void;
   onLogout: () => void;
 }) {
   return (
@@ -167,16 +162,6 @@ function TopBar({
             </span>
           )}
         </span>
-        {sessionUser.role === "admin" && (
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
-          >
-            <SettingsIcon className="h-4 w-4" />
-            <span className="hidden sm:inline">Settings</span>
-          </button>
-        )}
         <button
           type="button"
           onClick={onLogout}

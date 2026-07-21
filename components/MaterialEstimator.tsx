@@ -15,6 +15,7 @@ import { useMemo, useState } from "react";
 import { Calculator, DollarSign, Download, RotateCcw } from "lucide-react";
 import type { MaterialCategory, MaterialLineItem, Room, UnitCostSettings } from "@/lib/types";
 import { computeMaterialEstimate, DEFAULT_UNIT_COST_SETTINGS } from "@/lib/estimate-utils";
+import { CURRENCY_SYMBOL, formatCurrency } from "@/lib/currency-utils";
 
 interface MaterialEstimatorProps {
   rooms: Room[];
@@ -116,11 +117,11 @@ export default function MaterialEstimator({ rooms, initialSettings }: MaterialEs
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <CostInput label="Paint ($/sq ft)" value={settings.paintPerSqFt} onChange={(v) => updateSetting("paintPerSqFt", v)} />
-          <CostInput label="Drywall ($/sq ft)" value={settings.drywallPerSqFt} onChange={(v) => updateSetting("drywallPerSqFt", v)} />
-          <CostInput label="Flooring ($/sq ft)" value={settings.flooringPerSqFt} onChange={(v) => updateSetting("flooringPerSqFt", v)} />
-          <CostInput label="Trim ($/linear ft)" value={settings.trimPerLinearFt} onChange={(v) => updateSetting("trimPerLinearFt", v)} />
-          <CostInput label="Labor rate ($/hr)" value={settings.laborRatePerHour} onChange={(v) => updateSetting("laborRatePerHour", v)} />
+          <CostInput label={`Paint (${CURRENCY_SYMBOL}/sq ft)`} value={settings.paintPerSqFt} onChange={(v) => updateSetting("paintPerSqFt", v)} />
+          <CostInput label={`Drywall (${CURRENCY_SYMBOL}/sq ft)`} value={settings.drywallPerSqFt} onChange={(v) => updateSetting("drywallPerSqFt", v)} />
+          <CostInput label={`Flooring (${CURRENCY_SYMBOL}/sq ft)`} value={settings.flooringPerSqFt} onChange={(v) => updateSetting("flooringPerSqFt", v)} />
+          <CostInput label={`Trim (${CURRENCY_SYMBOL}/linear ft)`} value={settings.trimPerLinearFt} onChange={(v) => updateSetting("trimPerLinearFt", v)} />
+          <CostInput label={`Labor rate (${CURRENCY_SYMBOL}/hr)`} value={settings.laborRatePerHour} onChange={(v) => updateSetting("laborRatePerHour", v)} />
           <CostInput
             label="Labor hrs / sq ft"
             value={settings.laborHoursPerSqFt}
@@ -165,9 +166,9 @@ export default function MaterialEstimator({ rooms, initialSettings }: MaterialEs
                         <td className="px-2 py-2 tabular-nums text-slate-500">
                           {item.quantity} {formatUnit(item.unit)}
                         </td>
-                        <td className="px-2 py-2 tabular-nums text-slate-500">${item.unitCost.toFixed(2)}</td>
+                        <td className="px-2 py-2 tabular-nums text-slate-500">{formatCurrency(item.unitCost)}</td>
                         <td className="px-4 py-2 text-right tabular-nums font-medium text-slate-800">
-                          ${item.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          {formatCurrency(item.total)}
                         </td>
                       </tr>
                     ))}
@@ -180,15 +181,15 @@ export default function MaterialEstimator({ rooms, initialSettings }: MaterialEs
           <div className="space-y-1 border-t border-slate-200 bg-slate-50 px-4 py-3 text-sm">
             <div className="flex justify-between text-slate-600">
               <span>Subtotal</span>
-              <span className="tabular-nums">${estimate.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              <span className="tabular-nums">{formatCurrency(estimate.subtotal)}</span>
             </div>
             <div className="flex justify-between text-slate-600">
               <span>Contingency ({(estimate.contingencyPercent * 100).toFixed(0)}%)</span>
-              <span className="tabular-nums">${estimate.contingencyAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              <span className="tabular-nums">{formatCurrency(estimate.contingencyAmount)}</span>
             </div>
             <div className="flex justify-between border-t border-slate-200 pt-1.5 text-base font-semibold text-slate-900">
               <span>Total Estimate</span>
-              <span className="tabular-nums">${estimate.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              <span className="tabular-nums">{formatCurrency(estimate.total)}</span>
             </div>
           </div>
         </div>

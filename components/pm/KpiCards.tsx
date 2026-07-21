@@ -10,6 +10,7 @@
 
 import { Activity, DollarSign, TrendingUp, Users } from "lucide-react";
 import type { ProjectKpis } from "@/lib/project-types";
+import { formatCurrency } from "@/lib/currency-utils";
 
 export default function KpiCards({ kpis }: { kpis: ProjectKpis }) {
   return (
@@ -30,7 +31,7 @@ export default function KpiCards({ kpis }: { kpis: ProjectKpis }) {
         icon={DollarSign}
         label="Budget Burn"
         value={`${kpis.budgetBurnPercent}%`}
-        subtext={`$${kpis.totalSpent.toLocaleString()} / $${kpis.totalBudgeted.toLocaleString()}`}
+        subtext={`${formatCurrency(kpis.totalSpent, { decimals: false })} / ${formatCurrency(kpis.totalBudgeted, { decimals: false })}`}
         accent={
           kpis.budgetBurnPercent > 100
             ? "text-red-600 bg-red-50"

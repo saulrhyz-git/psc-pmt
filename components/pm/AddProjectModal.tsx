@@ -10,6 +10,7 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { AlertTriangle, Loader2, X } from "lucide-react";
 import type { CreateProjectBody, Project, ProjectResponseBody, ProjectStatus } from "@/lib/project-types";
+import { CURRENCY_SYMBOL } from "@/lib/currency-utils";
 
 interface AddProjectModalProps {
   open: boolean;
@@ -172,7 +173,7 @@ export default function AddProjectModal({ open, onClose, onCreated }: AddProject
               </select>
             </Field>
 
-            <Field label="Total Budget ($)" required>
+            <Field label={`Total Budget (${CURRENCY_SYMBOL})`} required>
               <input
                 required
                 type="number"

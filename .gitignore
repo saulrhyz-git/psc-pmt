@@ -15,3 +15,7 @@ node_modules/
 # Project Management data (Tool #2) — projects, tasks, budget, crew,
 # equipment. Local, per-installation data — see lib/project-store.ts.
 .projects-data.local.json
+
+# Reusable templates (Settings & Templates tab) — e.g. Budget templates.
+# Local, per-installation data — see lib/template-store.ts.
+.budget-templates.local.json

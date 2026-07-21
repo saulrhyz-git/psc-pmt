@@ -9,7 +9,7 @@
  * -----------------------------------------------------------------------------
  */
 
-import { Compass, HardHat, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Compass, HardHat, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon } from "lucide-react";
 import type { AppTool } from "@/lib/types";
 
 interface SidebarProps {
@@ -22,6 +22,7 @@ interface SidebarProps {
 const NAV_ITEMS: { key: AppTool; label: string; icon: typeof Compass; description: string }[] = [
   { key: "plan-analyzer", label: "Plan Analyzer", icon: Compass, description: "AI blueprint analysis & redraw" },
   { key: "project-management", label: "Project Management", icon: HardHat, description: "Tasks, budget, crew & schedule" },
+  { key: "settings-templates", label: "Settings & Templates", icon: SettingsIcon, description: "AI settings, users & templates" },
 ];
 
 export default function Sidebar({ activeTool, onSelectTool, collapsed, onToggleCollapsed }: SidebarProps) {

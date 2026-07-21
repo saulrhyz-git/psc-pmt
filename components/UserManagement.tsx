@@ -5,9 +5,10 @@
  * -----------------------------------------------------------------------------
  * Admin-only enrolled-user management: list, add, and remove student/admin
  * accounts. Backed by GET/POST/DELETE /api/auth/users (lib/auth.ts). Meant to
- * be embedded inside SettingsPanel's "Users" tab — the API routes already
- * enforce admin-only access, but the caller should still avoid mounting this
- * for non-admin sessions.
+ * be embedded inside the "Settings" sub-tab of
+ * components/settings-templates/SettingsTemplatesTool.tsx — the API routes
+ * already enforce admin-only access, but the caller should still avoid
+ * mounting this for non-admin sessions.
  * -----------------------------------------------------------------------------
  */
 
