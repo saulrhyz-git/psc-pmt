@@ -97,6 +97,9 @@ const CREW_STATUS_FROM_DB: Record<DbCrewStatus, CrewStatus> = {
   active: "active",
   on_leave: "on-leave",
   off_project: "off-project",
+  // "inactive" exists in the DB enum (added upstream, not exposed as an app-level
+  // status) — treat it as the closest equivalent so a row using it still renders.
+  inactive: "off-project",
 };
 
 const EQUIPMENT_STATUS_TO_DB: Record<EquipmentStatus, DbEquipmentStatus> = {

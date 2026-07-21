@@ -12,6 +12,11 @@
  * singleton `AppSecret` row (id = 1) replaces the JSON file's random
  * session-signing secret.
  *
+ * Note: `User.role` is a plain `String` column in the DB (not a Postgres
+ * enum) — see `toUserRole()` below, which narrows/guards it back to the
+ * app's `UserRole` union on every read, defaulting anything unrecognized to
+ * "student" (the lower-privilege option) rather than trusting the raw value.
+ *
  * Both are created lazily on first access, matching the old JSON file's
  * "create on first use" behavior:
  *   - `ensureMasterAdminSeeded()` inserts the seed master admin the first
@@ -70,6 +75,11 @@ function isUniqueConstraintError(err: unknown): boolean {
 
 function isNotFoundError(err: unknown): boolean {
   return typeof err === "object" && err !== null && "code" in err && (err as { code?: string }).code === "P2025";
+}
+
+/** Narrows the DB's plain-string `role` column back to the app's strict UserRole union. */
+function toUserRole(role: string): UserRole {
+  return role === "admin" ? "admin" : "student";
 }
 
 async function getOrCreateSessionSecret(): Promise<string> {
@@ -151,7 +161,7 @@ export async function verifySessionToken(token: string | undefined | null): Prom
   // Re-check the user still exists (e.g. wasn't removed by an admin after login).
   const user = await prisma.user.findUnique({ where: { username: payload.username } });
   if (!user) return null;
-  return { username: user.username, role: user.role };
+  return { username: user.username, role: toUserRole(user.role) };
 }
 
 // -----------------------------------------------------------------------------
@@ -188,19 +198,19 @@ export async function login(username: string, password: string): Promise<Session
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user) return null;
   if (!verifyPasswordHash(password, user.passwordHash)) return null;
-  return { username: user.username, role: user.role };
+  return { username: user.username, role: toUserRole(user.role) };
 }
 
 export async function listUsers(): Promise<EnrolledUser[]> {
   await ensureMasterAdminSeeded();
   const users = await prisma.user.findMany({ orderBy: { username: "asc" } });
-  return users.map((u) => ({ username: u.username, role: u.role, createdAt: u.createdAt.toISOString() }));
+  return users.map((u) => ({ username: u.username, role: toUserRole(u.role), createdAt: u.createdAt.toISOString() }));
 }
 
 export async function getUser(username: string): Promise<EnrolledUser | null> {
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user) return null;
-  return { username: user.username, role: user.role, createdAt: user.createdAt.toISOString() };
+  return { username: user.username, role: toUserRole(user.role), createdAt: user.createdAt.toISOString() };
 }
 
 export interface AddUserResult {
@@ -225,7 +235,7 @@ export async function addUser(username: string, password: string, role: UserRole
     });
     return {
       success: true,
-      user: { username: user.username, role: user.role, createdAt: user.createdAt.toISOString() },
+      user: { username: user.username, role: toUserRole(user.role), createdAt: user.createdAt.toISOString() },
     };
   } catch (err) {
     if (isUniqueConstraintError(err)) {

@@ -1,19 +1,3 @@
-// prisma/schema.prisma
-// -----------------------------------------------------------------------------
-// Postgres schema for the whole app (previously four separate gitignored
-// JSON files — .ai-settings.local.json, .auth-users.local.json,
-// .projects-data.local.json, .budget-templates.local.json — one per lib/*.ts
-// store module). Table names are explicitly snake_case via @@map/@map so the
-// DB reads naturally in psql regardless of the camelCase Prisma model names
-// used in application code.
-//
-// Singleton config tables (AppSecret, AiSettings) use a fixed `id = 1` row
-// rather than a real primary key sequence — there is intentionally always
-// exactly one row, upserted lazily on first access (see lib/auth.ts and
-// lib/ai-settings.ts), the same "create on first use" behavior the old JSON
-// files had.
-// -----------------------------------------------------------------------------
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -23,65 +7,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// -----------------------------------------------------------------------------
-// Auth (see lib/auth.ts)
-// -----------------------------------------------------------------------------
-
-enum UserRole {
-  admin
-  student
-}
-
-model User {
-  id           String   @id @default(uuid())
-  username     String   @unique
-  passwordHash String   @map("password_hash")
-  role         UserRole @default(student)
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  @@map("users")
-}
-
-/// Singleton: holds the random HMAC session-signing secret, generated once
-/// on first run.
-model AppSecret {
-  id            Int    @id @default(1)
-  sessionSecret String @map("session_secret")
-
-  @@map("app_secret")
-}
-
-// -----------------------------------------------------------------------------
-// AI provider settings (see lib/ai-settings.ts)
-// -----------------------------------------------------------------------------
-
-/// Singleton: raw stored values only. Precedence (stored -> env var ->
-/// built-in default) is still resolved in application code, unchanged from
-/// the JSON-file version.
-model AiSettings {
-  id           Int     @id @default(1)
-  geminiApiKey String? @map("gemini_api_key")
-  geminiModel  String? @map("gemini_model")
-  claudeApiKey String? @map("claude_api_key")
-  claudeModel  String? @map("claude_model")
-
-  @@map("ai_settings")
-}
-
-// -----------------------------------------------------------------------------
-// Project Management (see lib/project-store.ts, lib/project-types.ts)
-// -----------------------------------------------------------------------------
-
 enum ProjectStatus {
   planning
   active
-  on_hold @map("on-hold")
+  on_hold  @map("on-hold")
   completed
 }
 
 enum TaskStatus {
-  not_started @map("not-started")
-  in_progress @map("in-progress")
+  not_started  @map("not-started")
+  in_progress  @map("in-progress")
   blocked
   completed
 }
@@ -90,6 +25,20 @@ enum TaskPriority {
   low
   medium
   high
+}
+
+enum CrewStatus {
+  active
+  inactive
+  on_leave     @map("on-leave")
+  off_project  @map("off-project")
+}
+
+enum EquipmentStatus {
+  available
+  in_use       @map("in-use")
+  maintenance
+  reserved
 }
 
 enum BudgetCategory {
@@ -102,36 +51,47 @@ enum BudgetCategory {
   other
 }
 
-enum CrewStatus {
-  active
-  on_leave    @map("on-leave")
-  off_project @map("off-project")
+enum AnalysisProvider {
+  claude
+  gemini
 }
 
-enum EquipmentStatus {
-  available
-  in_use      @map("in-use")
-  maintenance
-  reserved
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  role         String   @default("user")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model AppSecret {
+  id            Int    @id
+  sessionSecret String
+}
+
+model AiSettings {
+  id          Int     @id
+  geminiApiKey String?
+  geminiModel  String?
+  claudeApiKey String?
+  claudeModel  String?
 }
 
 model Project {
-  id                   String        @id @default(uuid())
+  id                   String    @id
   name                 String
-  projectInCharge      String        @map("project_in_charge")
-  clientName           String        @map("client_name")
-  /// Stored as "yyyy-mm-dd" text (not a DB date type) to exactly preserve the
-  /// string-comparison semantics the app already relies on (e.g. start <= end
-  /// checks) and avoid timezone-shift surprises.
-  dateStarted          String        @map("date_started")
-  targetCompletionDate String?       @map("target_completion_date")
+  projectInCharge      String
+  clientName           String
+  dateStarted          String
+  targetCompletionDate String?
   address              String?
-  projectType          String?       @map("project_type")
-  totalBudget          Decimal       @map("total_budget") @db.Decimal(14, 2)
+  projectType          String?
+  totalBudget          Decimal   @default(0)
   status               ProjectStatus @default(planning)
   notes                String?
-  createdAt            DateTime      @default(now()) @map("created_at")
-  updatedAt            DateTime      @updatedAt @map("updated_at")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   tasks          Task[]
   budgetItems    BudgetLineItem[]
@@ -139,169 +99,115 @@ model Project {
   equipment      Equipment[]
   referenceFiles ReferenceFile[]
   planAnalyses   PlanAnalysis[]
-
-  @@map("projects")
 }
 
 model Task {
-  id              String       @id @default(uuid())
-  projectId       String       @map("project_id")
-  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id              String      @id
+  projectId       String
   title           String
   description     String?
   phase           String
-  status          TaskStatus   @default(not_started)
-  progressPercent Int          @default(0) @map("progress_percent")
+  status          TaskStatus  @default(not_started)
+  progressPercent Int         @default(0)
   assignee        String?
   priority        TaskPriority @default(medium)
-  startDate       String       @map("start_date")
-  endDate         String       @map("end_date")
-  createdAt       DateTime     @default(now()) @map("created_at")
-  updatedAt       DateTime     @updatedAt @map("updated_at")
+  startDate       String
+  endDate         String
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
-  @@index([projectId])
-  @@map("tasks")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model BudgetLineItem {
-  id          String         @id @default(uuid())
-  projectId   String         @map("project_id")
-  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id          String         @id
+  projectId   String
   phase       String
   category    BudgetCategory
   description String?
-  budgeted    Decimal        @db.Decimal(14, 2)
-  spent       Decimal        @default(0) @db.Decimal(14, 2)
-  createdAt   DateTime       @default(now()) @map("created_at")
-  updatedAt   DateTime       @updatedAt @map("updated_at")
+  budgeted    Decimal        @default(0)
+  spent       Decimal        @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
-  @@index([projectId])
-  @@map("budget_line_items")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model CrewMember {
-  id                String     @id @default(uuid())
-  projectId         String     @map("project_id")
-  project           Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id                String     @id
+  projectId         String
   name              String
   role              String
-  allocationPercent Int        @default(100) @map("allocation_percent")
+  allocationPercent Int        @default(100)
   status            CrewStatus @default(active)
   notes             String?
-  createdAt         DateTime   @default(now()) @map("created_at")
-  updatedAt         DateTime   @updatedAt @map("updated_at")
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
-  @@index([projectId])
-  @@map("crew_members")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model Equipment {
-  id            String          @id @default(uuid())
-  projectId     String          @map("project_id")
-  project       Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id            String          @id
+  projectId     String
   name          String
-  equipmentType String          @map("equipment_type")
+  equipmentType String
   status        EquipmentStatus @default(available)
-  assignedTo    String?         @map("assigned_to")
+  assignedTo    String?
   notes         String?
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
-  @@index([projectId])
-  @@map("equipment")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
-
-// -----------------------------------------------------------------------------
-// Templates (see lib/template-store.ts, lib/template-types.ts)
-// -----------------------------------------------------------------------------
 
 model BudgetTemplate {
-  id          String                   @id @default(uuid())
+  id          String   @id
   name        String
   description String?
-  createdAt   DateTime                 @default(now()) @map("created_at")
-  updatedAt   DateTime                 @updatedAt @map("updated_at")
-  lineItems   BudgetTemplateLineItem[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  @@map("budget_templates")
+  lineItems BudgetTemplateLineItem[]
 }
 
-/// No `id` is exposed in the app-facing TypeScript type
-/// (BudgetTemplateLineItem in lib/template-types.ts) — the store layer
-/// always replaces a template's full set of line items on update (delete +
-/// recreate in one transaction), matching the JSON-file version's
-/// whole-array-replacement semantics exactly.
 model BudgetTemplateLineItem {
-  id          String         @id @default(uuid())
-  templateId  String         @map("template_id")
-  template    BudgetTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  id          String         @id
+  templateId  String
   phase       String
   category    BudgetCategory
   description String?
-  budgeted    Decimal        @db.Decimal(14, 2)
+  budgeted    Decimal        @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
-  @@index([templateId])
-  @@map("budget_template_line_items")
-}
-
-// -----------------------------------------------------------------------------
-// Reference Files + saved Plan Analyses (see lib/reference-file-store.ts,
-// lib/plan-analysis-store.ts)
-//
-// Each Project Management project has its own reference-file library
-// (per-project, not global — spec sheets/codes/notes relevant to that job).
-// The AI Plan Analyzer's "Add to Project" action does two things atomically:
-//   1. persists the full computed PlanAnalysisResult as a PlanAnalysis row
-//      (viewable later from the Project Management tab), and
-//   2. renders a PDF report of that analysis and drops it into the same
-//      project's ReferenceFile library, linked back via sourceAnalysisId.
-// Deleting a PlanAnalysis does NOT delete its generated PDF (onDelete:
-// SetNull) — once a report is in the reference library it stands on its own.
-// Deleting the project cascades to both, like every other per-project table.
-// -----------------------------------------------------------------------------
-
-enum AnalysisProvider {
-  claude
-  gemini
+  template BudgetTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 }
 
 model ReferenceFile {
-  id               String        @id @default(uuid())
-  projectId        String        @map("project_id")
-  project          Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  fileName         String        @map("file_name")
-  mimeType         String        @map("mime_type")
-  fileSize         Int           @map("file_size")
+  id               String        @id
+  projectId        String
+  fileName         String
+  mimeType         String
+  fileSize         Int
   description      String?
-  /// Raw file bytes, stored directly in Postgres (bytea) — consistent with
-  /// the rest of the app's "no separate file storage" architecture.
   data             Bytes
-  sourceAnalysisId String?       @unique @map("source_analysis_id")
-  sourceAnalysis   PlanAnalysis? @relation(fields: [sourceAnalysisId], references: [id], onDelete: SetNull)
-  createdAt        DateTime      @default(now()) @map("created_at")
+  sourceAnalysisId String?       @unique
+  createdAt        DateTime      @default(now())
 
-  @@index([projectId])
-  @@map("reference_files")
+  project        Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourceAnalysis PlanAnalysis? @relation(fields: [sourceAnalysisId], references: [id], onDelete: SetNull)
 }
 
 model PlanAnalysis {
-  id            String            @id @default(uuid())
-  projectId     String            @map("project_id")
-  project       Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  /// Original uploaded blueprint's file name (the source image/PDF itself is
-  /// not persisted — only the computed extraction result).
-  fileName      String            @map("file_name")
-  provider      AnalysisProvider
-  /// The free-text Context field value supplied at analysis time, if any.
-  context       String?
-  /// The full PlanAnalysisResult (rooms, walls, openings, fixtures,
-  /// svgVectorData, cost estimate, etc.) — see lib/types.ts. Stored as jsonb
-  /// rather than normalized tables since it's read/written as one unit and
-  /// never queried by its internal fields.
-  resultJson    Json              @map("result_json")
-  referenceFile ReferenceFile?
-  createdAt     DateTime          @default(now()) @map("created_at")
+  id         String           @id
+  projectId  String
+  fileName   String
+  provider   AnalysisProvider
+  context    String?
+  resultJson Json
+  createdAt  DateTime         @default(now())
 
-  @@index([projectId])
-  @@map("plan_analyses")
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  referenceFile ReferenceFile?
 }
