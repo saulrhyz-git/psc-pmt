@@ -55,11 +55,28 @@ export function convertArea(value: number, from: MeasurementUnit, to: Measuremen
   return (value * metersFactor) / targetFactor;
 }
 
-/** Formats a Dimension as a human-readable string, e.g. "142.5 sq ft" or "12'-6"". */
+/** Formats a Dimension as a human-readable decimal string, e.g. "13.25 sq m" or "3.20 m". */
 export function formatDimension(dim: Dimension, opts?: { asArea?: boolean; precision?: number }): string {
-  const precision = opts?.precision ?? 1;
+  const precision = opts?.precision ?? defaultPrecision(dim.unit);
   const unitLabel = formatUnitLabel(dim.unit, opts?.asArea);
   return `${dim.value.toFixed(precision)} ${unitLabel}`;
+}
+
+function defaultPrecision(unit: MeasurementUnit): number {
+  // Metric decimal-meter convention (Philippine architectural practice) wants
+  // 2 decimals (e.g. "3.20 m"); centimeters/inches are already fine-grained
+  // enough at 0 decimals.
+  switch (unit) {
+    case "m":
+      return 2;
+    case "ft":
+      return 1;
+    case "in":
+    case "cm":
+      return 0;
+    default:
+      return 1;
+  }
 }
 
 function formatUnitLabel(unit: MeasurementUnit, asArea?: boolean): string {
@@ -72,14 +89,29 @@ function formatUnitLabel(unit: MeasurementUnit, asArea?: boolean): string {
   return asArea ? labels[unit].area : labels[unit].linear;
 }
 
-/** Formats a feet value as feet-and-inches, e.g. 12.5 -> `12'-6"`. */
-export function formatFeetInches(feet: number): string {
-  const wholeFeet = Math.floor(feet);
-  const inches = Math.round((feet - wholeFeet) * 12);
-  if (inches === 12) {
-    return `${wholeFeet + 1}'-0"`;
+/**
+ * Formats a single linear Dimension as compound meters + centimeters, e.g.
+ * a 3.2m dimension -> "3m 20cm", a 0.15m wall thickness -> "15cm". This is
+ * the preferred display format for individual room/furniture/opening
+ * dimensions (the app targets Philippine users, where this compound style
+ * reads more naturally than decimal meters for a single measurement).
+ * Converts from whatever unit the Dimension is stored in first, so it works
+ * regardless of the source unit. Not meant for areas or summed totals —
+ * use `formatDimension(dim, { asArea: true })` for those.
+ */
+export function formatMetersCentimeters(dim: Dimension): string {
+  const meters = convertDimension(dim, "m").value;
+  const sign = meters < 0 ? "-" : "";
+  const abs = Math.abs(meters);
+  let wholeMeters = Math.floor(abs);
+  let cm = Math.round((abs - wholeMeters) * 100);
+  if (cm === 100) {
+    wholeMeters += 1;
+    cm = 0;
   }
-  return `${wholeFeet}'-${inches}"`;
+  if (wholeMeters === 0) return `${sign}${cm}cm`;
+  if (cm === 0) return `${sign}${wholeMeters}m`;
+  return `${sign}${wholeMeters}m ${cm}cm`;
 }
 
 // -----------------------------------------------------------------------------
@@ -114,18 +146,18 @@ export function parseScaleString(scaleLabel: string): { ratio: number; unit: Mea
 
 /**
  * Derives a ScaleCalibration by using a known real-world reference length
- * (e.g. "the front door is 3 feet wide") measured against its pixel length
- * on the source image.
+ * (e.g. "the front door is 0.9 meters wide") measured against its pixel
+ * length on the source image.
  */
 export function calibrateFromReferenceObject(
-  referenceLengthRealFt: number,
+  referenceLengthRealM: number,
   referenceLengthPixels: number,
   referenceObjectLabel: string
 ): ScaleCalibration {
-  const unitsPerPixel = referenceLengthRealFt / referenceLengthPixels;
+  const unitsPerPixel = referenceLengthRealM / referenceLengthPixels;
   return {
     detected: true,
-    unit: "ft",
+    unit: "m",
     unitsPerPixel,
     confidence: 0.6,
     method: "door-width-heuristic",
@@ -133,8 +165,8 @@ export function calibrateFromReferenceObject(
   };
 }
 
-/** Standard door width used as a fallback calibration reference (in feet). */
-export const STANDARD_DOOR_WIDTH_FT = 3;
+/** Standard interior door width used as a fallback calibration reference (in meters). */
+export const STANDARD_DOOR_WIDTH_M = 0.9;
 
 // -----------------------------------------------------------------------------
 // Polygon geometry
@@ -214,7 +246,7 @@ export function computeWallSurfaceArea(perimeter: Dimension, ceilingHeight: Dime
 }
 
 /** Sums the floor area of a list of rooms into a single Dimension, normalizing units. */
-export function sumRoomAreas(rooms: Room[], targetUnit: MeasurementUnit = "ft"): Dimension {
+export function sumRoomAreas(rooms: Room[], targetUnit: MeasurementUnit = "m"): Dimension {
   const total = rooms.reduce((sum, room) => {
     return sum + convertArea(room.area.value, room.area.unit, targetUnit);
   }, 0);
@@ -222,7 +254,7 @@ export function sumRoomAreas(rooms: Room[], targetUnit: MeasurementUnit = "ft"):
 }
 
 /** Total exterior + interior wall length across a set of wall segments, in a target unit. */
-export function sumWallLength(walls: WallSegment[], scale: ScaleCalibration, targetUnit: MeasurementUnit = "ft"): Dimension {
+export function sumWallLength(walls: WallSegment[], scale: ScaleCalibration, targetUnit: MeasurementUnit = "m"): Dimension {
   const unitsPerPixel = scale.unitsPerPixel ?? 1;
   const total = walls.reduce((sum, wall) => {
     const rawLength = distance(wall.start, wall.end) * unitsPerPixel;
@@ -235,14 +267,14 @@ export function sumWallLength(walls: WallSegment[], scale: ScaleCalibration, tar
 // Space planning heuristics
 // -----------------------------------------------------------------------------
 
-/** ADA-recommended minimum clear width for accessible routes/hallways, in feet. */
-export const ADA_MIN_CLEAR_WIDTH_FT = 3.0;
+/** Accessibility-recommended minimum clear width for accessible routes/hallways, in meters. */
+export const ADA_MIN_CLEAR_WIDTH_M = 0.915;
 
-/** IBC-recommended minimum egress door clear width, in feet. */
-export const MIN_EGRESS_DOOR_WIDTH_FT = 2.67; // 32in clear opening
+/** Recommended minimum egress door clear width, in meters (~32in clear opening). */
+export const MIN_EGRESS_DOOR_WIDTH_M = 0.813;
 
-/** Typical minimum functional bedroom area per most residential codes, in sq ft. */
-export const MIN_BEDROOM_AREA_SQFT = 70;
+/** Typical minimum functional bedroom area per most residential codes, in sq m. */
+export const MIN_BEDROOM_AREA_SQM = 6.5;
 
 /**
  * Simple aspect-ratio check used to flag oddly-proportioned rooms
@@ -260,20 +292,20 @@ export function isAwkwardProportion(width: number, length: number, maxRatio = 3)
 
 /** Computes a base material + labor cost breakdown for a set of rooms. */
 export function computeBaseEstimateInputs(rooms: Room[], settings: UnitCostSettings) {
-  const totalAreaSqFt = sumRoomAreas(rooms, "ft").value;
-  const totalWallAreaSqFt = rooms.reduce((sum, room) => {
+  const totalAreaSqM = sumRoomAreas(rooms, "m").value;
+  const totalWallAreaSqM = rooms.reduce((sum, room) => {
     if (!room.wallSurfaceArea) return sum;
-    return sum + convertArea(room.wallSurfaceArea.value, room.wallSurfaceArea.unit, "ft");
+    return sum + convertArea(room.wallSurfaceArea.value, room.wallSurfaceArea.unit, "m");
   }, 0);
-  const totalPerimeterFt = rooms.reduce((sum, room) => {
-    return sum + convertLength(room.perimeter.value, room.perimeter.unit, "ft");
+  const totalPerimeterM = rooms.reduce((sum, room) => {
+    return sum + convertLength(room.perimeter.value, room.perimeter.unit, "m");
   }, 0);
 
   return {
-    totalAreaSqFt: round(totalAreaSqFt, 2),
-    totalWallAreaSqFt: round(totalWallAreaSqFt, 2),
-    totalPerimeterFt: round(totalPerimeterFt, 2),
-    estimatedLaborHours: round(totalAreaSqFt * settings.laborHoursPerSqFt, 1),
+    totalAreaSqM: round(totalAreaSqM, 2),
+    totalWallAreaSqM: round(totalWallAreaSqM, 2),
+    totalPerimeterM: round(totalPerimeterM, 2),
+    estimatedLaborHours: round(totalAreaSqM * settings.laborHoursPerSqM, 1),
   };
 }
 

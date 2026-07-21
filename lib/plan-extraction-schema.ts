@@ -56,34 +56,36 @@ Critical rules for extraction:
    y increases down), preserving the true aspect ratio and relative proportions of the
    original plan as closely as possible. Do not output raw pixel coordinates from the
    original image resolution.
-2. SCALE CALIBRATION: Look for an explicit scale annotation (e.g. "1/4\\" = 1'-0\\"",
-   "1:100", a scale bar, or dimension strings printed on the plan like "12'-6\\""). If
-   found, set scaleCalibration.detected = true, fill scaleLabel, and compute
-   unitsPerPixel as the real-world unit (feet or meters) represented by ONE unit of your
-   0-1000 normalized coordinate space. If no explicit scale exists, use a standard door
-   width of 3 feet (36 inches) as a reference object to infer scale, set method to
-   "door-width-heuristic", and lower your confidence score accordingly (0.3-0.6). If you
-   truly cannot estimate scale, set detected = false, method = "unknown", confidence = 0,
-   and unitsPerPixel = 0.01 as a harmless placeholder — do not omit the field.
+2. SCALE CALIBRATION: Look for an explicit scale annotation (e.g. "1:100", "1:50", a scale
+   bar, or dimension strings printed on the plan in meters/centimeters). If found, set
+   scaleCalibration.detected = true, fill scaleLabel, and compute unitsPerPixel as the
+   real-world unit in METERS represented by ONE unit of your 0-1000 normalized coordinate
+   space. If no explicit scale exists, use a standard interior door width of 0.9 meters
+   as a reference object to infer scale, set method to "door-width-heuristic", and lower
+   your confidence score accordingly (0.3-0.6). If you truly cannot estimate scale, set
+   detected = false, method = "unknown", confidence = 0, and unitsPerPixel = 0.01 as a
+   harmless placeholder — do not omit the field. Always express measurements in the
+   METRIC system (meters/centimeters) — this app is used in the Philippines, which uses
+   SI units exclusively; never reason in feet or inches.
 3. ROOMS: Identify every enclosed room/space including hallways and closets. For each,
    provide a closed polygon (list of points, minimum 3, first point not repeated at the
    end), a best-guess room type, and a descriptive name (use the label on the plan if
    present, otherwise infer from fixtures e.g. "Bedroom 1", "Bathroom").
 4. WALLS: Extract straight wall segments as start/end point pairs. Mark exterior walls
-   (perimeter of the building) vs interior walls. Approximate wall thickness in feet
-   (typically 0.4-0.5 ft for interior, 0.5-0.7 ft for exterior) if not explicitly labeled.
+   (perimeter of the building) vs interior walls. Approximate wall thickness in meters
+   (typically 0.10-0.15 m for interior, 0.15-0.20 m for exterior) if not explicitly labeled.
 5. OPENINGS: Identify every door and window. Reference the wall it interrupts by matching
-   wallId to one of your wall segment ids. Estimate standard widths if unlabeled (interior
-   doors ~2.5-3ft, exterior doors ~3ft, windows ~3-4ft).
+   wallId to one of your wall segment ids. Estimate standard widths in meters if unlabeled
+   (interior doors ~0.7-0.9 m, exterior doors ~0.9 m, windows ~0.9-1.2 m).
 6. FIXTURES: Identify fixed structural/plumbing/mechanical items (toilets, sinks, tubs,
    showers, kitchen counters/islands, stairs, closets, water heaters, HVAC, fireplaces).
 7. SPACE PLANNING: Evaluate traffic flow, door swing clearances, hallway widths against a
-   3ft accessibility minimum, room proportions (flag very long/narrow rooms), egress
+   0.9 m accessibility minimum, room proportions (flag very long/narrow rooms), egress
    (bedrooms should have a door or window), and general layout efficiency. Produce concrete,
    specific comments — not generic advice.
 8. FURNITURE SUGGESTIONS: For bedrooms, living rooms, dining rooms, offices and kitchens,
    propose a sensible furniture layout (bed placement away from door swing, sofa facing
-   focal point, dining table centered, etc.) with realistic footprints in feet.
+   focal point, dining table centered, etc.) with realistic footprints in meters.
 9. Never leave required fields empty. If genuinely unknown, use a conservative estimate and
    note the uncertainty in the "warnings" array instead of omitting data.
 10. All ids you invent (roomId, wallId, openingId, fixtureId) must be short, unique, stable
@@ -97,16 +99,16 @@ Think carefully and look closely at the image before producing your final answer
 export function buildUserPrompt(
   fileName: string,
   knownScale?: string,
-  referenceMeasurementFt?: number,
+  referenceMeasurementM?: number,
   context?: string
 ): string {
   const hints: string[] = [];
   if (knownScale) {
     hints.push(`The user has indicated the plan's scale is: "${knownScale}". Prefer this over any heuristic guess.`);
   }
-  if (referenceMeasurementFt) {
+  if (referenceMeasurementM) {
     hints.push(
-      `The user has indicated a known reference measurement of ${referenceMeasurementFt} ft somewhere on the plan (typically the front door or a labeled wall). Use it to sanity-check your scale calibration.`
+      `The user has indicated a known reference measurement of ${referenceMeasurementM} m somewhere on the plan (typically the front door or a labeled wall). Use it to sanity-check your scale calibration.`
     );
   }
   if (context && context.trim()) {
@@ -194,7 +196,7 @@ export const PLAN_EXTRACTION_JSON_SCHEMA = {
             ],
           },
           polygon: { type: "array", items: POINT_SCHEMA, minItems: 3 },
-          ceilingHeightFt: { type: "number", description: "Estimated ceiling height in feet, default 8 if unknown." },
+          ceilingHeightM: { type: "number", description: "Estimated ceiling height in meters, default 2.4 if unknown." },
           openingIds: { type: "array", items: { type: "string" } },
           fixtureIds: { type: "array", items: { type: "string" } },
           notes: { type: "string" },
@@ -210,11 +212,11 @@ export const PLAN_EXTRACTION_JSON_SCHEMA = {
           id: { type: "string" },
           start: POINT_SCHEMA,
           end: POINT_SCHEMA,
-          thicknessFt: { type: "number" },
+          thicknessM: { type: "number", description: "Wall thickness in meters." },
           type: { type: "string", enum: ["exterior", "interior", "load-bearing", "partition", "unknown"] },
           adjacentRoomIds: { type: "array", items: { type: "string" } },
         },
-        required: ["id", "start", "end", "thicknessFt", "type", "adjacentRoomIds"],
+        required: ["id", "start", "end", "thicknessM", "type", "adjacentRoomIds"],
       },
     },
     openings: {
@@ -226,14 +228,14 @@ export const PLAN_EXTRACTION_JSON_SCHEMA = {
           type: { type: "string", enum: ["door", "window", "opening", "sliding-door", "double-door", "garage-door"] },
           wallId: { type: "string" },
           positionAlongWall: { type: "number", minimum: 0, maximum: 1 },
-          widthFt: { type: "number" },
+          widthM: { type: "number", description: "Opening width in meters." },
           swingDirection: {
             type: "string",
             enum: ["left-in", "right-in", "left-out", "right-out", "sliding", "none"],
           },
           label: { type: "string" },
         },
-        required: ["id", "type", "wallId", "positionAlongWall", "widthFt"],
+        required: ["id", "type", "wallId", "positionAlongWall", "widthM"],
       },
     },
     fixtures: {
@@ -251,8 +253,8 @@ export const PLAN_EXTRACTION_JSON_SCHEMA = {
           },
           roomId: { type: "string" },
           position: POINT_SCHEMA,
-          footprintWidthFt: { type: "number" },
-          footprintLengthFt: { type: "number" },
+          footprintWidthM: { type: "number", description: "Fixture footprint width in meters." },
+          footprintLengthM: { type: "number", description: "Fixture footprint length in meters." },
           label: { type: "string" },
         },
         required: ["id", "type", "roomId", "position"],
@@ -297,13 +299,13 @@ export const PLAN_EXTRACTION_JSON_SCHEMA = {
             ],
           },
           label: { type: "string" },
-          footprintWidthFt: { type: "number" },
-          footprintLengthFt: { type: "number" },
+          footprintWidthM: { type: "number", description: "Furniture footprint width in meters." },
+          footprintLengthM: { type: "number", description: "Furniture footprint length in meters." },
           position: POINT_SCHEMA,
           rotationDegrees: { type: "number" },
           rationale: { type: "string" },
         },
-        required: ["id", "roomId", "type", "label", "footprintWidthFt", "footprintLengthFt", "position", "rotationDegrees"],
+        required: ["id", "roomId", "type", "label", "footprintWidthM", "footprintLengthM", "position", "rotationDegrees"],
       },
     },
     warnings: {
@@ -343,7 +345,7 @@ export interface RawExtraction {
     name: string;
     type: Room["type"];
     polygon: { x: number; y: number }[];
-    ceilingHeightFt?: number;
+    ceilingHeightM?: number;
     openingIds: string[];
     fixtureIds: string[];
     notes?: string;
@@ -352,7 +354,7 @@ export interface RawExtraction {
     id: string;
     start: { x: number; y: number };
     end: { x: number; y: number };
-    thicknessFt: number;
+    thicknessM: number;
     type: WallSegment["type"];
     adjacentRoomIds: string[];
   }>;
@@ -361,7 +363,7 @@ export interface RawExtraction {
     type: Opening["type"];
     wallId: string;
     positionAlongWall: number;
-    widthFt: number;
+    widthM: number;
     swingDirection?: Opening["swingDirection"];
     label?: string;
   }>;
@@ -370,8 +372,8 @@ export interface RawExtraction {
     type: StructuralFixture["type"];
     roomId: string;
     position: { x: number; y: number };
-    footprintWidthFt?: number;
-    footprintLengthFt?: number;
+    footprintWidthM?: number;
+    footprintLengthM?: number;
     label?: string;
   }>;
   spacePlanningComments: SpacePlanningComment[];
@@ -380,8 +382,8 @@ export interface RawExtraction {
     roomId: string;
     type: FurnitureSuggestion["type"];
     label: string;
-    footprintWidthFt: number;
-    footprintLengthFt: number;
+    footprintWidthM: number;
+    footprintLengthM: number;
     position: { x: number; y: number };
     rotationDegrees: number;
     rationale?: string;
@@ -412,7 +414,7 @@ export function buildPlanAnalysisResult(
     detected: raw.scaleCalibration.detected,
     scaleLabel: raw.scaleCalibration.scaleLabel,
     unitsPerPixel: raw.scaleCalibration.unitsPerPixel || 0.01,
-    unit: raw.scaleCalibration.unit || "ft",
+    unit: raw.scaleCalibration.unit || "m",
     confidence: clamp01(raw.scaleCalibration.confidence),
     method: raw.scaleCalibration.method || "unknown",
     referenceObject: raw.scaleCalibration.referenceObject,
@@ -422,7 +424,7 @@ export function buildPlanAnalysisResult(
     id: w.id || generateId("wall"),
     start: w.start,
     end: w.end,
-    thickness: { value: w.thicknessFt ?? 0.5, unit: "ft" },
+    thickness: { value: w.thicknessM ?? 0.15, unit: "m" },
     type: w.type || "unknown",
     adjacentRoomIds: w.adjacentRoomIds || [],
   }));
@@ -432,7 +434,7 @@ export function buildPlanAnalysisResult(
     type: o.type,
     wallId: o.wallId,
     positionAlongWall: clamp01(o.positionAlongWall),
-    width: { value: o.widthFt ?? 3, unit: "ft" },
+    width: { value: o.widthM ?? 0.9, unit: "m" },
     swingDirection: o.swingDirection,
     label: o.label,
   }));
@@ -443,10 +445,10 @@ export function buildPlanAnalysisResult(
     roomId: f.roomId,
     position: f.position,
     footprint:
-      f.footprintWidthFt && f.footprintLengthFt
+      f.footprintWidthM && f.footprintLengthM
         ? {
-            width: { value: f.footprintWidthFt, unit: "ft" },
-            length: { value: f.footprintLengthFt, unit: "ft" },
+            width: { value: f.footprintWidthM, unit: "m" },
+            length: { value: f.footprintLengthM, unit: "m" },
           }
         : undefined,
     label: f.label,
@@ -455,7 +457,7 @@ export function buildPlanAnalysisResult(
   const rooms: Room[] = raw.rooms.map((r) => {
     const polygon = { points: r.polygon };
     const { area, perimeter } = computeRoomMeasurements(polygon, scale);
-    const ceilingHeight: Dimension = { value: r.ceilingHeightFt ?? 8, unit: "ft" };
+    const ceilingHeight: Dimension = { value: r.ceilingHeightM ?? 2.4, unit: "m" };
     const wallSurfaceArea = computeWallSurfaceArea(perimeter, ceilingHeight);
 
     return {
@@ -481,8 +483,8 @@ export function buildPlanAnalysisResult(
     type: f.type,
     label: f.label,
     footprint: {
-      width: { value: f.footprintWidthFt, unit: "ft" },
-      length: { value: f.footprintLengthFt, unit: "ft" },
+      width: { value: f.footprintWidthM, unit: "m" },
+      length: { value: f.footprintLengthM, unit: "m" },
     },
     position: f.position,
     rotation: f.rotationDegrees ?? 0,
@@ -491,7 +493,7 @@ export function buildPlanAnalysisResult(
 
   const totalArea = sumRoomAreas(
     rooms.filter((r) => r.type !== "outdoor"),
-    "ft"
+    "m"
   );
 
   const metadata: PlanMetadata = {

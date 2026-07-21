@@ -322,8 +322,8 @@ function UploadPanel({
         <div className="flex flex-col gap-3">
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-slate-500">
-              Known scale (optional) — e.g. <code className="rounded bg-slate-100 px-1">1/4&quot; = 1&apos;-0&quot;</code> or{" "}
-              <code className="rounded bg-slate-100 px-1">1:100</code>
+              Known scale (optional) — e.g. <code className="rounded bg-slate-100 px-1">1:100</code> or{" "}
+              <code className="rounded bg-slate-100 px-1">1:50</code>
             </span>
             <input
               type="text"

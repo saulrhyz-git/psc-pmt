@@ -66,12 +66,12 @@ function validateBody(body: EstimateRequestBody | undefined): string | null {
     return "`unitCostSettings` is required.";
   }
   const requiredKeys: (keyof UnitCostSettings)[] = [
-    "paintPerSqFt",
-    "drywallPerSqFt",
-    "flooringPerSqFt",
-    "trimPerLinearFt",
+    "paintPerSqM",
+    "drywallPerSqM",
+    "flooringPerSqM",
+    "trimPerLinearM",
     "laborRatePerHour",
-    "laborHoursPerSqFt",
+    "laborHoursPerSqM",
     "contingencyPercent",
   ];
   for (const key of requiredKeys) {

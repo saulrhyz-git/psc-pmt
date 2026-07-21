@@ -117,16 +117,16 @@ export default function MaterialEstimator({ rooms, initialSettings }: MaterialEs
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <CostInput label={`Paint (${CURRENCY_SYMBOL}/sq ft)`} value={settings.paintPerSqFt} onChange={(v) => updateSetting("paintPerSqFt", v)} />
-          <CostInput label={`Drywall (${CURRENCY_SYMBOL}/sq ft)`} value={settings.drywallPerSqFt} onChange={(v) => updateSetting("drywallPerSqFt", v)} />
-          <CostInput label={`Flooring (${CURRENCY_SYMBOL}/sq ft)`} value={settings.flooringPerSqFt} onChange={(v) => updateSetting("flooringPerSqFt", v)} />
-          <CostInput label={`Trim (${CURRENCY_SYMBOL}/linear ft)`} value={settings.trimPerLinearFt} onChange={(v) => updateSetting("trimPerLinearFt", v)} />
+          <CostInput label={`Paint (${CURRENCY_SYMBOL}/sq m)`} value={settings.paintPerSqM} onChange={(v) => updateSetting("paintPerSqM", v)} />
+          <CostInput label={`Drywall (${CURRENCY_SYMBOL}/sq m)`} value={settings.drywallPerSqM} onChange={(v) => updateSetting("drywallPerSqM", v)} />
+          <CostInput label={`Flooring (${CURRENCY_SYMBOL}/sq m)`} value={settings.flooringPerSqM} onChange={(v) => updateSetting("flooringPerSqM", v)} />
+          <CostInput label={`Trim (${CURRENCY_SYMBOL}/linear m)`} value={settings.trimPerLinearM} onChange={(v) => updateSetting("trimPerLinearM", v)} />
           <CostInput label={`Labor rate (${CURRENCY_SYMBOL}/hr)`} value={settings.laborRatePerHour} onChange={(v) => updateSetting("laborRatePerHour", v)} />
           <CostInput
-            label="Labor hrs / sq ft"
-            value={settings.laborHoursPerSqFt}
+            label="Labor hrs / sq m"
+            value={settings.laborHoursPerSqM}
             step={0.01}
-            onChange={(v) => updateSetting("laborHoursPerSqFt", v)}
+            onChange={(v) => updateSetting("laborHoursPerSqM", v)}
           />
           <CostInput
             label="Contingency (%)"

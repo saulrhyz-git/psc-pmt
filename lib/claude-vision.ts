@@ -78,7 +78,7 @@ export interface AnalyzePlanImageInput {
   mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
   fileName: string;
   knownScale?: string;
-  referenceMeasurementFt?: number;
+  referenceMeasurementM?: number;
   /** Optional free-text context appended to the model's user prompt. */
   context?: string;
 }
@@ -117,7 +117,7 @@ export async function analyzePlanImage(input: AnalyzePlanImageInput): Promise<Pl
             },
             {
               type: "text",
-              text: buildUserPrompt(input.fileName, input.knownScale, input.referenceMeasurementFt, input.context),
+              text: buildUserPrompt(input.fileName, input.knownScale, input.referenceMeasurementM, input.context),
             },
           ],
         },

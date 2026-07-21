@@ -365,18 +365,18 @@ function FurnitureLayer({
   visibleIds?: Set<string>;
   scale: SVGVectorData["scale"];
 }) {
-  // Convert a footprint measured in real-world feet back into normalized plan-space
-  // units using the same calibration Claude derived (unitsPerPixel = real units per
+  // Convert a footprint measured in real-world meters back into normalized plan-space
+  // units using the same calibration the model derived (unitsPerPixel = real units per
   // normalized unit). Guard against a zero/undefined ratio with a safe fallback.
-  const unitsPerFt = scale.unitsPerPixel && scale.unitsPerPixel > 0 ? 1 / scale.unitsPerPixel : 25;
+  const unitsPerM = scale.unitsPerPixel && scale.unitsPerPixel > 0 ? 1 / scale.unitsPerPixel : 25;
 
   return (
     <g>
       {suggestions
         .filter((item) => !visibleIds || visibleIds.has(item.id))
         .map((item) => {
-          const w = item.footprint.width.value * unitsPerFt;
-          const l = item.footprint.length.value * unitsPerFt;
+          const w = item.footprint.width.value * unitsPerM;
+          const l = item.footprint.length.value * unitsPerM;
           return (
             <g
               key={item.id}

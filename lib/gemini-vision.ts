@@ -71,7 +71,7 @@ export interface AnalyzePlanImageWithGeminiInput {
   mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
   fileName: string;
   knownScale?: string;
-  referenceMeasurementFt?: number;
+  referenceMeasurementM?: number;
   /** Optional free-text context appended to the model's user prompt. */
   context?: string;
 }
@@ -105,7 +105,7 @@ export async function analyzePlanImageWithGemini(
           role: "user",
           parts: [
             { inlineData: { mimeType, data: input.imageBase64 } },
-            { text: buildUserPrompt(input.fileName, input.knownScale, input.referenceMeasurementFt, input.context) },
+            { text: buildUserPrompt(input.fileName, input.knownScale, input.referenceMeasurementM, input.context) },
           ],
         },
       ],

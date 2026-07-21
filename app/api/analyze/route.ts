@@ -80,7 +80,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<AnalyzeRespon
       mediaType,
       fileName: body.fileName,
       knownScale: body.knownScale,
-      referenceMeasurementFt: body.referenceMeasurementFt,
+      referenceMeasurementM: body.referenceMeasurementM,
       context: body.context,
     });
 
@@ -116,10 +116,10 @@ function validateRequestBody(body: AnalyzeRequestBody | undefined): string | nul
   }
 
   if (
-    body.referenceMeasurementFt !== undefined &&
-    (typeof body.referenceMeasurementFt !== "number" || body.referenceMeasurementFt <= 0)
+    body.referenceMeasurementM !== undefined &&
+    (typeof body.referenceMeasurementM !== "number" || body.referenceMeasurementM <= 0)
   ) {
-    return "`referenceMeasurementFt`, if provided, must be a positive number.";
+    return "`referenceMeasurementM`, if provided, must be a positive number.";
   }
 
   if (body.context !== undefined && typeof body.context !== "string") {

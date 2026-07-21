@@ -14,7 +14,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, Eye, EyeOff, Sofa } from "lucide-react";
 import type { FurnitureSuggestion, Room } from "@/lib/types";
-import { formatDimension } from "@/lib/measurement-utils";
+import { formatMetersCentimeters } from "@/lib/measurement-utils";
 
 interface FurnitureOverlayProps {
   rooms: Room[];
@@ -129,7 +129,7 @@ export default function FurnitureOverlay({
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-medium text-slate-800">{item.label}</p>
                           <p className="text-[11px] text-slate-500">
-                            {formatDimension(item.footprint.width)} × {formatDimension(item.footprint.length)}
+                            {formatMetersCentimeters(item.footprint.width)} × {formatMetersCentimeters(item.footprint.length)}
                           </p>
                           {item.rationale && <p className="mt-0.5 text-[11px] italic text-slate-400">{item.rationale}</p>}
                         </div>

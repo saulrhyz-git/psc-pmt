@@ -16,7 +16,7 @@
 
 import PDFDocument from "pdfkit";
 import type { PlanAnalysisResult } from "./types";
-import { formatDimension } from "./measurement-utils";
+import { formatDimension, formatMetersCentimeters } from "./measurement-utils";
 import { formatCurrency } from "./currency-utils";
 
 export interface PlanAnalysisPdfInput {
@@ -97,7 +97,7 @@ function renderReport(doc: PDFKit.PDFDocument, input: PlanAnalysisPdfInput): voi
   result.rooms.forEach((room) => {
     doc.fontSize(10.5).font("Helvetica-Bold").fillColor("#000").text(`${room.name}  (${room.type})`);
     const dims = room.approximateDimensions
-      ? `   Approx: ${formatDimension(room.approximateDimensions.width)} x ${formatDimension(room.approximateDimensions.length)}`
+      ? `   Approx: ${formatMetersCentimeters(room.approximateDimensions.width)} x ${formatMetersCentimeters(room.approximateDimensions.length)}`
       : "";
     doc
       .fontSize(9.5)
@@ -133,7 +133,7 @@ function renderReport(doc: PDFKit.PDFDocument, input: PlanAnalysisPdfInput): voi
   if (result.furnitureSuggestions.length > 0) {
     sectionHeading(doc, "Furniture Suggestions");
     result.furnitureSuggestions.forEach((f) => {
-      const footprint = `${formatDimension(f.footprint.width)} x ${formatDimension(f.footprint.length)}`;
+      const footprint = `${formatMetersCentimeters(f.footprint.width)} x ${formatMetersCentimeters(f.footprint.length)}`;
       doc
         .fontSize(9.5)
         .font("Helvetica")

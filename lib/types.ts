@@ -306,7 +306,7 @@ export interface MaterialLineItem {
   id: string;
   category: MaterialCategory;
   label: string;
-  /** Quantity in the unit specified by `unit` (e.g. sq ft, gallons, linear ft). */
+  /** Quantity in the unit specified by `unit` (e.g. sq m, gallons/liters, linear m). */
   quantity: number;
   unit: "sq_ft" | "sq_m" | "gallons" | "liters" | "sheets" | "linear_ft" | "linear_m" | "hours" | "each";
   /** Editable unit cost, in PHP (Philippine Peso) by default — see lib/currency-utils.ts. */
@@ -330,13 +330,13 @@ export interface MaterialEstimate {
 
 /** Default unit costs, editable by the contractor in MaterialEstimator. */
 export interface UnitCostSettings {
-  paintPerSqFt: number;
-  drywallPerSqFt: number;
-  flooringPerSqFt: number;
-  trimPerLinearFt: number;
+  paintPerSqM: number;
+  drywallPerSqM: number;
+  flooringPerSqM: number;
+  trimPerLinearM: number;
   laborRatePerHour: number;
-  /** Estimated labor hours per sq ft of floor area, used for base labor estimate. */
-  laborHoursPerSqFt: number;
+  /** Estimated labor hours per sq m of floor area, used for base labor estimate. */
+  laborHoursPerSqM: number;
   contingencyPercent: number;
 }
 
@@ -414,8 +414,8 @@ export interface AnalyzeRequestBody {
   provider: VisionProvider;
   /** Optional user-provided scale hint, e.g. "1/4in = 1ft". */
   knownScale?: string;
-  /** Optional user-provided reference measurement to aid calibration. */
-  referenceMeasurementFt?: number;
+  /** Optional user-provided reference measurement (in meters) to aid calibration. */
+  referenceMeasurementM?: number;
   /**
    * Optional free-text context supplied by the user (e.g. "this is a 2-story
    * duplex, focus on the ground floor" or "client wants an open-concept

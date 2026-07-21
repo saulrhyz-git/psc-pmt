@@ -12,7 +12,7 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, ArrowUpDown, Info, ShieldAlert, TriangleAlert } from "lucide-react";
 import type { Room, SpacePlanningComment, SpacePlanningSeverity } from "@/lib/types";
-import { formatDimension } from "@/lib/measurement-utils";
+import { formatDimension, formatMetersCentimeters } from "@/lib/measurement-utils";
 
 interface RoomBreakdownTableProps {
   rooms: Room[];
@@ -116,7 +116,7 @@ export default function RoomBreakdownTable({
                   <td className="px-3 py-2.5 capitalize text-slate-500">{room.type.replace("-", " ")}</td>
                   <td className="px-3 py-2.5 text-slate-600">
                     {room.approximateDimensions
-                      ? `${formatDimension(room.approximateDimensions.width)} × ${formatDimension(room.approximateDimensions.length)}`
+                      ? `${formatMetersCentimeters(room.approximateDimensions.width)} × ${formatMetersCentimeters(room.approximateDimensions.length)}`
                       : "—"}
                   </td>
                   <td className="px-3 py-2.5 tabular-nums text-slate-700">{formatDimension(room.area, { asArea: true })}</td>
@@ -153,7 +153,7 @@ export default function RoomBreakdownTable({
                 Total ({rooms.length} rooms)
               </td>
               <td className="px-3 py-2.5 font-semibold tabular-nums text-slate-800">
-                {formatDimension({ value: totalArea, unit: rooms[0]?.area.unit ?? "ft" }, { asArea: true })}
+                {formatDimension({ value: totalArea, unit: rooms[0]?.area.unit ?? "m" }, { asArea: true })}
               </td>
               <td colSpan={2} />
             </tr>

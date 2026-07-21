@@ -16,22 +16,23 @@ import type { MaterialCategory, MaterialEstimate, MaterialLineItem, Room, UnitCo
 import { convertArea, convertLength, generateId, round } from "./measurement-utils";
 
 // Coverage assumptions (industry-standard rules of thumb used to derive raw
-// material quantities from measured room areas/perimeters).
-const PAINT_SQFT_PER_GALLON = 350;
+// material quantities from measured room areas/perimeters), in metric units
+// (this app targets the Philippines, which uses SI units).
+const PAINT_SQM_PER_GALLON = 32.5; // ~350 sq ft/gallon per coat, converted to sq m
 const PAINT_COATS = 2;
-const DRYWALL_SQFT_PER_SHEET = 32; // 4ft x 8ft sheet
+const DRYWALL_SQM_PER_SHEET = 2.88; // standard 1.2m x 2.4m gypsum board sheet
 const DRYWALL_WASTE_FACTOR = 1.1;
 const FLOORING_WASTE_FACTOR = 1.1;
 const TRIM_WASTE_FACTOR = 1.1;
 
 /** Sensible default unit costs shown on first load, before the contractor customizes them. */
 export const DEFAULT_UNIT_COST_SETTINGS: UnitCostSettings = {
-  paintPerSqFt: 0.6,
-  drywallPerSqFt: 1.75,
-  flooringPerSqFt: 4.5,
-  trimPerLinearFt: 2.25,
+  paintPerSqM: 6.46,
+  drywallPerSqM: 18.84,
+  flooringPerSqM: 48.44,
+  trimPerLinearM: 7.38,
   laborRatePerHour: 65,
-  laborHoursPerSqFt: 0.12,
+  laborHoursPerSqM: 1.29,
   contingencyPercent: 0.1,
 };
 
@@ -45,71 +46,71 @@ export function computeMaterialEstimate(rooms: Room[], settings: UnitCostSetting
   for (const room of rooms) {
     if (room.type === "outdoor") continue;
 
-    const floorAreaSqFt = convertArea(room.area.value, room.area.unit, "ft");
-    const wallAreaSqFt = room.wallSurfaceArea
-      ? convertArea(room.wallSurfaceArea.value, room.wallSurfaceArea.unit, "ft")
+    const floorAreaSqM = convertArea(room.area.value, room.area.unit, "m");
+    const wallAreaSqM = room.wallSurfaceArea
+      ? convertArea(room.wallSurfaceArea.value, room.wallSurfaceArea.unit, "m")
       : 0;
-    const perimeterFt = convertLength(room.perimeter.value, room.perimeter.unit, "ft");
+    const perimeterM = convertLength(room.perimeter.value, room.perimeter.unit, "m");
 
-    if (wallAreaSqFt > 0) {
-      const paintedSqFt = wallAreaSqFt * PAINT_COATS;
-      const gallons = round(paintedSqFt / PAINT_SQFT_PER_GALLON, 2);
+    if (wallAreaSqM > 0) {
+      const paintedSqM = wallAreaSqM * PAINT_COATS;
+      const gallons = round(paintedSqM / PAINT_SQM_PER_GALLON, 2);
       lineItems.push(
         makeLineItem({
           category: "paint",
           label: `Paint — ${room.name} (${PAINT_COATS} coats)`,
           quantity: gallons,
           unit: "gallons",
-          unitCost: settings.paintPerSqFt * PAINT_SQFT_PER_GALLON,
+          unitCost: settings.paintPerSqM * PAINT_SQM_PER_GALLON,
           roomId: room.id,
         })
       );
     }
 
-    if (wallAreaSqFt > 0) {
-      const sheets = Math.ceil((wallAreaSqFt * DRYWALL_WASTE_FACTOR) / DRYWALL_SQFT_PER_SHEET);
+    if (wallAreaSqM > 0) {
+      const sheets = Math.ceil((wallAreaSqM * DRYWALL_WASTE_FACTOR) / DRYWALL_SQM_PER_SHEET);
       lineItems.push(
         makeLineItem({
           category: "drywall",
-          label: `Drywall — ${room.name} (4'x8' sheets)`,
+          label: `Drywall — ${room.name} (1.2m x 2.4m sheets)`,
           quantity: sheets,
           unit: "sheets",
-          unitCost: settings.drywallPerSqFt * DRYWALL_SQFT_PER_SHEET,
+          unitCost: settings.drywallPerSqM * DRYWALL_SQM_PER_SHEET,
           roomId: room.id,
         })
       );
     }
 
-    if (floorAreaSqFt > 0) {
-      const flooringSqFt = round(floorAreaSqFt * FLOORING_WASTE_FACTOR, 2);
+    if (floorAreaSqM > 0) {
+      const flooringSqM = round(floorAreaSqM * FLOORING_WASTE_FACTOR, 2);
       lineItems.push(
         makeLineItem({
           category: "flooring",
           label: `Flooring — ${room.name}`,
-          quantity: flooringSqFt,
-          unit: "sq_ft",
-          unitCost: settings.flooringPerSqFt,
+          quantity: flooringSqM,
+          unit: "sq_m",
+          unitCost: settings.flooringPerSqM,
           roomId: room.id,
         })
       );
     }
 
-    if (perimeterFt > 0) {
-      const trimFt = round(perimeterFt * TRIM_WASTE_FACTOR, 2);
+    if (perimeterM > 0) {
+      const trimM = round(perimeterM * TRIM_WASTE_FACTOR, 2);
       lineItems.push(
         makeLineItem({
           category: "trim",
           label: `Baseboard trim — ${room.name}`,
-          quantity: trimFt,
-          unit: "linear_ft",
-          unitCost: settings.trimPerLinearFt,
+          quantity: trimM,
+          unit: "linear_m",
+          unitCost: settings.trimPerLinearM,
           roomId: room.id,
         })
       );
     }
 
-    if (floorAreaSqFt > 0) {
-      const hours = round(floorAreaSqFt * settings.laborHoursPerSqFt, 1);
+    if (floorAreaSqM > 0) {
+      const hours = round(floorAreaSqM * settings.laborHoursPerSqM, 1);
       lineItems.push(
         makeLineItem({
           category: "labor",
