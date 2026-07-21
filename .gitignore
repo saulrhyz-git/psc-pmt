@@ -4,3 +4,6 @@ node_modules/
 .env
 *.log
 .DS_Store
+
+# In-app AI settings (API keys saved via the Settings panel — see lib/ai-settings.ts)
+.ai-settings.local.json

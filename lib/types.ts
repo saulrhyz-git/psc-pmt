@@ -437,6 +437,52 @@ export interface EstimateResponseBody {
 }
 
 // -----------------------------------------------------------------------------
+// In-app AI settings (API keys + model overrides configurable from the UI —
+// see lib/ai-settings.ts, app/api/settings/route.ts, components/SettingsPanel.tsx)
+// -----------------------------------------------------------------------------
+
+/** Raw shape persisted to the local settings file. Server-only — never sent to the client as-is. */
+export interface StoredAiSettings {
+  geminiApiKey?: string;
+  geminiModel?: string;
+  claudeApiKey?: string;
+  claudeModel?: string;
+}
+
+/** Where a currently-active setting value came from, surfaced in the Settings UI. */
+export type SettingSource = "settings" | "env" | "default" | "none";
+
+export interface ResolvedSetting {
+  value: string | undefined;
+  source: SettingSource;
+}
+
+/** Client-safe status for one provider — never includes the raw API key. */
+export interface ProviderSettingsStatus {
+  configured: boolean;
+  keySource: SettingSource;
+  /** Masked preview of the active key, e.g. "AQ.Ab8R••••••ttk05g". Omitted if not configured. */
+  maskedKey?: string;
+  model: string;
+  modelSource: SettingSource;
+}
+
+export interface AiSettingsResponseBody {
+  success: boolean;
+  gemini?: ProviderSettingsStatus;
+  claude?: ProviderSettingsStatus;
+  error?: string;
+}
+
+/**
+ * POST body for updating settings. Per-field semantics:
+ *   - field omitted → leave the existing stored value untouched
+ *   - field is a non-empty string → overwrite
+ *   - field is an empty string `""` → explicitly clear (revert to env/default)
+ */
+export type AiSettingsUpdateBody = Partial<StoredAiSettings>;
+
+// -----------------------------------------------------------------------------
 // UI state helpers
 // -----------------------------------------------------------------------------
 

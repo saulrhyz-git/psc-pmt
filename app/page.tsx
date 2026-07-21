@@ -23,6 +23,7 @@ import {
   Layers,
   Loader2,
   Ruler,
+  Settings as SettingsIcon,
   Sofa,
   Sparkles,
   Table2,
@@ -34,6 +35,7 @@ import RoomBreakdownTable from "@/components/RoomBreakdownTable";
 import FurnitureOverlay from "@/components/FurnitureOverlay";
 import MaterialEstimator from "@/components/MaterialEstimator";
 import ProviderSelector from "@/components/ProviderSelector";
+import SettingsPanel from "@/components/SettingsPanel";
 import type {
   AnalysisStatus,
   AnalyzeResponseBody,
@@ -67,6 +69,7 @@ export default function PlanAnalyzerPage() {
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [visibleFurnitureIds, setVisibleFurnitureIds] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<TabKey>("breakdown");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Remember the last provider choice across visits (e.g. a classroom of
   // students who all pick Gemini once and don't want to re-select it).
@@ -140,7 +143,8 @@ export default function PlanAnalyzerPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-[1600px] flex-col gap-6 p-4 sm:p-6 lg:p-8">
-      <Header />
+      <Header onOpenSettings={() => setIsSettingsOpen(true)} />
+      <SettingsPanel open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       {!result ? (
         <UploadPanel
@@ -152,6 +156,7 @@ export default function PlanAnalyzerPage() {
           onKnownScaleChange={setKnownScale}
           provider={provider}
           onProviderChange={handleProviderChange}
+          onOpenSettings={() => setIsSettingsOpen(true)}
           onAnalyze={runAnalysis}
           error={error}
         />
@@ -225,19 +230,29 @@ export default function PlanAnalyzerPage() {
 // Sub-sections
 // -----------------------------------------------------------------------------
 
-function Header() {
+function Header({ onOpenSettings }: { onOpenSettings: () => void }) {
   return (
-    <header className="flex items-center gap-3">
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm">
-        <Compass className="h-6 w-6" />
+    <header className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm">
+          <Compass className="h-6 w-6" />
+        </div>
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">AI Plan Analyzer &amp; Redrawer</h1>
+          <p className="text-sm text-slate-500">
+            Upload a blueprint or hand sketch to get layout analysis, a clean vector redraw, space-planning review,
+            furniture suggestions, and a material cost estimate.
+          </p>
+        </div>
       </div>
-      <div>
-        <h1 className="text-xl font-bold text-slate-900">AI Plan Analyzer &amp; Redrawer</h1>
-        <p className="text-sm text-slate-500">
-          Upload a blueprint or hand sketch to get layout analysis, a clean vector redraw, space-planning review,
-          furniture suggestions, and a material cost estimate.
-        </p>
-      </div>
+      <button
+        type="button"
+        onClick={onOpenSettings}
+        className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
+      >
+        <SettingsIcon className="h-4 w-4" />
+        <span className="hidden sm:inline">Settings</span>
+      </button>
     </header>
   );
 }
@@ -251,6 +266,7 @@ function UploadPanel({
   onKnownScaleChange,
   provider,
   onProviderChange,
+  onOpenSettings,
   onAnalyze,
   error,
 }: {
@@ -262,6 +278,7 @@ function UploadPanel({
   onKnownScaleChange: (v: string) => void;
   provider: VisionProvider;
   onProviderChange: (p: VisionProvider) => void;
+  onOpenSettings: () => void;
   onAnalyze: () => void;
   error: string | null;
 }) {
@@ -274,7 +291,19 @@ function UploadPanel({
         onClear={onClear}
       />
 
-      {!isAnalyzing && <ProviderSelector value={provider} onChange={onProviderChange} disabled={isAnalyzing} />}
+      {!isAnalyzing && (
+        <div className="flex flex-col gap-2">
+          <ProviderSelector value={provider} onChange={onProviderChange} disabled={isAnalyzing} />
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="flex w-fit items-center gap-1 text-[11px] font-medium text-indigo-600 hover:underline"
+          >
+            <SettingsIcon className="h-3 w-3" />
+            Configure API keys &amp; models
+          </button>
+        </div>
+      )}
 
       {uploadedFile && !isAnalyzing && (
         <div className="flex flex-col gap-3">

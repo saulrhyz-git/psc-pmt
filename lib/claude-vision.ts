@@ -18,6 +18,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { PlanAnalysisResult } from "./types";
+import { getClaudeApiKey, getClaudeModel } from "./ai-settings";
 import {
   buildPlanAnalysisResult,
   buildUserPrompt,
@@ -32,26 +33,22 @@ import {
 // -----------------------------------------------------------------------------
 
 /**
- * Default Claude model. Override with CLAUDE_VISION_MODEL in your environment
- * if you want to point at a different Claude vision-capable model.
+ * Builds a fresh Anthropic client using whatever API key is currently active
+ * (in-app Settings panel takes precedence over ANTHROPIC_API_KEY — see
+ * lib/ai-settings.ts). Deliberately NOT cached as a module-level singleton:
+ * the key can change at runtime via the Settings panel, and re-instantiating
+ * the SDK client per call is cheap enough that a stale-key bug isn't worth
+ * the trade-off.
  */
-const CLAUDE_VISION_MODEL = process.env.CLAUDE_VISION_MODEL || "claude-3-5-sonnet-20241022";
-
-let _client: Anthropic | null = null;
-
-/** Lazily instantiates a singleton Anthropic client using the server-side API key. */
 function getClient(): Anthropic {
-  if (_client) return _client;
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const { value: apiKey } = getClaudeApiKey();
   if (!apiKey) {
     throw new VisionExtractionError(
-      "ANTHROPIC_API_KEY is not set. Add it to your environment (.env.local) before selecting Claude as the analysis provider, or switch to the Gemini provider instead."
+      "No Anthropic API key configured. Add one in the app's Settings panel, or set ANTHROPIC_API_KEY in your environment, before selecting Claude as the analysis provider — or switch to the Gemini provider instead."
     );
   }
 
-  _client = new Anthropic({ apiKey });
-  return _client;
+  return new Anthropic({ apiKey });
 }
 
 /** Re-exported under the old name for backwards compatibility with any existing imports. */
@@ -91,11 +88,15 @@ export interface AnalyzePlanImageInput {
  */
 export async function analyzePlanImage(input: AnalyzePlanImageInput): Promise<PlanAnalysisResult> {
   const client = getClient();
+  // getClaudeModel() always resolves to a string (settings → env → built-in
+  // default), but its type is string | undefined for symmetry with the API
+  // key getters, so we fall back defensively here to keep the SDK call typed.
+  const model = getClaudeModel().value ?? "claude-3-5-sonnet-20241022";
 
   let response: Anthropic.Message;
   try {
     response = await client.messages.create({
-      model: CLAUDE_VISION_MODEL,
+      model,
       max_tokens: 8192,
       system: SYSTEM_PROMPT,
       tools: [PLAN_EXTRACTION_TOOL],

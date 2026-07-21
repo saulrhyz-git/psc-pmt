@@ -46,12 +46,24 @@ math, so results are directly comparable between the two.
 
 ```bash
 npm install
-cp .env.example .env.local
-# then edit .env.local and set GEMINI_API_KEY (free) and/or ANTHROPIC_API_KEY (paid)
 npm run dev
 ```
 
-Open http://localhost:3000, pick a provider in the upload panel, and analyze a plan.
+Open http://localhost:3000. You can configure API keys two ways:
+
+1. **In-app (recommended for students)** — click **Settings** in the header (or
+   "Configure API keys & models" under the provider picker), paste a Gemini
+   and/or Claude key, and save. This writes to a local, gitignored file
+   (`.ai-settings.local.json`) and takes effect immediately on your next
+   analysis — no restart, no editing config files by hand.
+2. **Environment variables** — `cp .env.example .env.local` and set
+   `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` there. Useful for deployed
+   environments where the filesystem is read-only (in-app settings need a
+   writable project directory).
+
+If both are set, the in-app Settings panel wins. Model overrides
+(`GEMINI_VISION_MODEL` / `CLAUDE_VISION_MODEL`) work the same way and can also
+be changed from the Settings panel.
 
 ### PDF support
 
@@ -71,12 +83,14 @@ app/
   api/
     analyze/route.ts        # Upload -> PDF rasterization -> provider dispatch -> PlanAnalysisResult
     estimate/route.ts       # Server-side material/cost estimate endpoint
+    settings/route.ts       # GET/POST in-app AI settings (API keys, model overrides)
   page.tsx                  # Main dashboard
   layout.tsx
   globals.css
 components/
   UploadZone.tsx            # Drag-and-drop upload
   ProviderSelector.tsx      # Claude vs. Gemini picker (free-tier note for Gemini)
+  SettingsPanel.tsx          # In-app API key / model settings modal
   PlanViewer.tsx             # Split-screen original vs. redrawn artifact
   SVGPlanRenderer.tsx        # Interactive SVG plan: pan/zoom, layer toggles, room highlighting
   RoomBreakdownTable.tsx     # Dimensions, areas, space-planning flags
@@ -88,6 +102,7 @@ lib/
   gemini-vision.ts            # Gemini-specific API call mechanics
   vision-provider.ts          # Server-side dispatcher: routes to claude-vision or gemini-vision
   vision-provider-metadata.ts # Client-safe provider labels/descriptions (no SDK imports)
+  ai-settings.ts               # In-app settings store (JSON file) with env-var fallback
   measurement-utils.ts        # Scale calibration + geometry math
   estimate-utils.ts           # Pure material/cost pricing engine (shared client+server)
   types.ts                    # Full TypeScript schema for the whole pipeline
@@ -119,3 +134,11 @@ lib/
   from `lib/plan-extraction-schema.ts`, add a case to the switch in
   `lib/vision-provider.ts`, and add an entry to
   `lib/vision-provider-metadata.ts`. No other files need to change.
+- **In-app settings, no restart needed.** `lib/ai-settings.ts` resolves each
+  API key/model fresh on every request (settings file → env var → built-in
+  default) rather than reading `process.env` once at module load, and
+  `lib/claude-vision.ts`/`lib/gemini-vision.ts` build a new SDK client per
+  call instead of caching a singleton. That's what lets Settings-panel changes
+  take effect immediately. `GET /api/settings` only ever returns masked key
+  previews — raw keys travel from browser to server on save and are never
+  echoed back.

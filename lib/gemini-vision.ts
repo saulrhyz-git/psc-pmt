@@ -24,6 +24,7 @@
 
 import { GoogleGenAI } from "@google/genai";
 import type { PlanAnalysisResult } from "./types";
+import { getGeminiApiKey, getGeminiModel } from "./ai-settings";
 import {
   buildPlanAnalysisResult,
   buildUserPrompt,
@@ -39,32 +40,21 @@ import {
 // -----------------------------------------------------------------------------
 
 /**
- * Default Gemini model. gemini-3.5-flash is multimodal (text/image/video/
- * audio/PDF input) and free-tier eligible via Google AI Studio. Override with
- * GEMINI_VISION_MODEL in your environment if Google ships a newer/cheaper
- * model after this was written — check https://ai.google.dev/gemini-api/docs/models
- * for the current lineup and free-tier eligibility before changing this.
+ * Builds a fresh GoogleGenAI client using whatever API key is currently active
+ * (in-app Settings panel takes precedence over GEMINI_API_KEY/GOOGLE_API_KEY —
+ * see lib/ai-settings.ts). Deliberately NOT cached as a module-level singleton
+ * for the same reason as lib/claude-vision.ts's getClient(): the key can
+ * change at runtime via the Settings panel.
  */
-const GEMINI_VISION_MODEL = process.env.GEMINI_VISION_MODEL || "gemini-3.5-flash";
-
-let _client: GoogleGenAI | null = null;
-
-/** Lazily instantiates a singleton GoogleGenAI client using the server-side API key. */
 function getClient(): GoogleGenAI {
-  if (_client) return _client;
-
-  // The SDK auto-detects GEMINI_API_KEY (and falls back to GOOGLE_API_KEY) from
-  // the environment, but we read it explicitly first so we can throw a clear,
-  // actionable error instead of a cryptic SDK failure.
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  const { value: apiKey } = getGeminiApiKey();
   if (!apiKey) {
     throw new VisionExtractionError(
-      "GEMINI_API_KEY is not set. Get a free key at https://aistudio.google.com/apikey and add it to your environment (.env.local) before selecting Gemini as the analysis provider."
+      "No Gemini API key configured. Add one in the app's Settings panel, or get a free key at https://aistudio.google.com/apikey and set GEMINI_API_KEY in your environment, before selecting Gemini as the analysis provider."
     );
   }
 
-  _client = new GoogleGenAI({ apiKey });
-  return _client;
+  return new GoogleGenAI({ apiKey });
 }
 
 /** Re-exported for symmetry with lib/claude-vision.ts's ClaudeVisionError alias. */
@@ -94,6 +84,10 @@ export async function analyzePlanImageWithGemini(
   input: AnalyzePlanImageWithGeminiInput
 ): Promise<PlanAnalysisResult> {
   const client = getClient();
+  // getGeminiModel() always resolves to a string (settings → env → built-in
+  // default), but its type is string | undefined for symmetry with the API
+  // key getters, so we fall back defensively here to keep the SDK call typed.
+  const model = getGeminiModel().value ?? "gemini-3.5-flash";
 
   // Gemini's inline image parts use image/gif support inconsistently across
   // models; we only ever feed it PNG/JPEG/WEBP in practice (PDFs are
@@ -103,7 +97,7 @@ export async function analyzePlanImageWithGemini(
   let rawText: string;
   try {
     const response = await client.models.generateContent({
-      model: GEMINI_VISION_MODEL,
+      model,
       contents: [
         {
           role: "user",
