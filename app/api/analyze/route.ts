@@ -123,21 +123,25 @@ async function normalizeToImage(
 
   try {
     // Dynamic imports keep these heavyweight, Node-only deps out of the Edge bundle graph.
-    const [{ getDocument, GlobalWorkerOptions }, { createCanvas }] = await Promise.all([
+    const [{ getDocument, GlobalWorkerOptions }, pdfWorkerModule, { createCanvas }] = await Promise.all([
       import("pdfjs-dist/legacy/build/pdf.mjs"),
+      import("pdfjs-dist/legacy/build/pdf.worker.mjs"),
       import("canvas"),
     ]);
 
-    // pdfjs-dist still probes for a real worker script even in Node, and treats
-    // an empty-string workerSrc as "not specified" — leading to the
+    // pdfjs-dist's Node.js "fake worker" fallback normally tries to dynamically
+    // `import()` whatever GlobalWorkerOptions.workerSrc resolves to — but that
+    // resolution is finicky across bundlers/runtimes and is what was producing
     // 'Setting up fake worker failed: No "GlobalWorkerOptions.workerSrc"
-    // specified' error. Point it at the actual worker file pdfjs-dist ships so
-    // its synchronous, in-process fallback ("fake worker") can load correctly.
-    if (!GlobalWorkerOptions.workerSrc) {
-      const { createRequire } = await import("node:module");
-      const require = createRequire(import.meta.url);
-      GlobalWorkerOptions.workerSrc = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
-    }
+    // specified'. Sidestep it entirely by registering the worker's message
+    // handler directly on globalThis.pdfjsWorker, which pdfjs-dist checks
+    // FIRST (before ever touching workerSrc) — see PDFWorker._setupFakeWorkerGlobal
+    // in pdfjs-dist's source. We still set workerSrc too, as a harmless
+    // defensive fallback in case that internal check ever changes.
+    (globalThis as unknown as { pdfjsWorker?: unknown }).pdfjsWorker = {
+      WorkerMessageHandler: pdfWorkerModule.WorkerMessageHandler,
+    };
+    GlobalWorkerOptions.workerSrc = "pdfjs-dist/legacy/build/pdf.worker.mjs";
 
     const pdfBuffer = Buffer.from(fileBase64, "base64");
     const loadingTask = getDocument({ data: new Uint8Array(pdfBuffer) });
