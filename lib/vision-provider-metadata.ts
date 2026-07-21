@@ -16,7 +16,7 @@ export const VISION_PROVIDERS: Record<VisionProvider, VisionProviderInfo> = {
   gemini: {
     id: "gemini",
     label: "Google Gemini",
-    description: "Great default for students and no-budget use — Google's Flash-Lite tier is free with a personal API key.",
+    description: "Great default for students and no-budget use — Gemini's Flash tier is free with a personal API key.",
     costNote: "Free tier available",
     requiredEnvVar: "GEMINI_API_KEY",
     getApiKeyUrl: "https://aistudio.google.com/apikey",

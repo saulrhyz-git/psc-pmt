@@ -17,7 +17,7 @@ extraction is provider-agnostic — pick **Claude** or **Gemini** per request
 from the UI:
 
 - **Claude 3.5 Sonnet** via the Anthropic SDK's tool-use / JSON schema mode.
-- **Google Gemini** (`gemini-2.5-flash-lite` by default) via `@google/genai`'s
+- **Google Gemini** (`gemini-3.5-flash` by default) via `@google/genai`'s
   `responseSchema` / `responseMimeType: "application/json"` structured-output mode.
 
 ## Why two providers — a note for classroom / student use

@@ -39,13 +39,13 @@ import {
 // -----------------------------------------------------------------------------
 
 /**
- * Default Gemini model. "flash-lite" tier models are the cheapest / most
- * generous-free-tier multimodal models Google offers. Override with
+ * Default Gemini model. gemini-3.5-flash is multimodal (text/image/video/
+ * audio/PDF input) and free-tier eligible via Google AI Studio. Override with
  * GEMINI_VISION_MODEL in your environment if Google ships a newer/cheaper
  * model after this was written — check https://ai.google.dev/gemini-api/docs/models
  * for the current lineup and free-tier eligibility before changing this.
  */
-const GEMINI_VISION_MODEL = process.env.GEMINI_VISION_MODEL || "gemini-2.5-flash-lite";
+const GEMINI_VISION_MODEL = process.env.GEMINI_VISION_MODEL || "gemini-3.5-flash";
 
 let _client: GoogleGenAI | null = null;
 
