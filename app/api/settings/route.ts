@@ -28,42 +28,41 @@ export const runtime = "nodejs";
 // break analysis for the whole class.
 
 export async function GET(req: NextRequest): Promise<NextResponse<AiSettingsResponseBody>> {
-  if (!(await requireAdmin(req))) {
-    return NextResponse.json({ success: false, error: "Admin access required." }, { status: 403 });
-  }
-
   try {
+    if (!(await requireAdmin(req))) {
+      return NextResponse.json({ success: false, error: "Admin access required." }, { status: 403 });
+    }
+
     const status = await getAiSettingsStatus();
     return NextResponse.json({ success: true, ...status }, { status: 200 });
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error("[api/settings] GET failed:", err);
     return NextResponse.json(
-      { success: false, error: "Failed to read current AI settings." },
+      { success: false, error: "Failed to read current AI settings. (Is the database reachable and migrated?)" },
       { status: 500 }
     );
   }
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse<AiSettingsResponseBody>> {
-  if (!(await requireAdmin(req))) {
-    return NextResponse.json({ success: false, error: "Admin access required." }, { status: 403 });
-  }
-
-  let body: AiSettingsUpdateBody;
-
   try {
-    body = (await req.json()) as AiSettingsUpdateBody;
-  } catch {
-    return NextResponse.json({ success: false, error: "Request body must be valid JSON." }, { status: 400 });
-  }
+    if (!(await requireAdmin(req))) {
+      return NextResponse.json({ success: false, error: "Admin access required." }, { status: 403 });
+    }
 
-  const validationError = validateBody(body);
-  if (validationError) {
-    return NextResponse.json({ success: false, error: validationError }, { status: 400 });
-  }
+    let body: AiSettingsUpdateBody;
+    try {
+      body = (await req.json()) as AiSettingsUpdateBody;
+    } catch {
+      return NextResponse.json({ success: false, error: "Request body must be valid JSON." }, { status: 400 });
+    }
 
-  try {
+    const validationError = validateBody(body);
+    if (validationError) {
+      return NextResponse.json({ success: false, error: validationError }, { status: 400 });
+    }
+
     await updateStoredSettings(body);
     const status = await getAiSettingsStatus();
     return NextResponse.json({ success: true, ...status }, { status: 200 });
@@ -71,7 +70,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<AiSettingsRes
     // eslint-disable-next-line no-console
     console.error("[api/settings] POST failed:", err);
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : "Failed to save AI settings." },
+      { success: false, error: err instanceof Error ? err.message : "Failed to save AI settings. (Is the database reachable and migrated?)" },
       { status: 500 }
     );
   }
