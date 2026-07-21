@@ -4,12 +4,29 @@
  * POST /api/analyze
  *
  * Accepts an uploaded blueprint (image or PDF) as a base64 payload, rasterizes
- * PDFs to a PNG (first page) using pdfjs-dist + node-canvas, sends the resulting
- * image to the caller's chosen vision provider (Claude or Gemini) for structured
+ * PDFs to a PNG (first page) using `mupdf`, sends the resulting image to the
+ * caller's chosen vision provider (Claude or Gemini) for structured
  * extraction, and returns a fully computed PlanAnalysisResult.
  *
- * Runtime: Node.js (not Edge) — pdf rendering requires the `canvas` native
- * module, which is unavailable in the Edge runtime.
+ * Why mupdf and not pdfjs-dist + node-canvas: that combination has a known,
+ * currently-unresolved upstream bug where rendering a PDF page containing an
+ * embedded raster image throws `TypeError: Image or Canvas expected` (see
+ * mozilla/pdf.js#19566, #19794, Automattic/node-canvas#2349) — pdfjs-dist's
+ * internal worker/message-handler abstraction hands decoded images to the
+ * canvas context as plain objects that fail node-canvas's `instanceof`
+ * checks. `mupdf` is a WASM build of MuPDF with a synchronous API and no
+ * canvas/worker abstraction in the way, which sidesteps the bug entirely —
+ * and as a bonus requires no native compilation (unlike `canvas`, which
+ * needs Cairo/Pango and a C++ toolchain to build from source).
+ *
+ * License note: `mupdf` is AGPL-3.0-or-later (commercial licenses available
+ * from Artifex — see https://artifex.com/contact/mupdf-js). That's a
+ * meaningfully different license posture than the rest of this project's
+ * dependencies (all permissive). Fine for local/classroom use; worth a
+ * second look before distributing this as a hosted service to others.
+ *
+ * Runtime: Node.js (not Edge) — mupdf's WASM module needs Node's filesystem
+ * APIs to load, which aren't available in the Edge runtime.
  * -----------------------------------------------------------------------------
  */
 
@@ -105,10 +122,13 @@ function validateRequestBody(body: AnalyzeRequestBody | undefined): string | nul
 
 type VisionImageMediaType = "image/png" | "image/jpeg" | "image/webp" | "image/gif";
 
+/** Render scale relative to the PDF's native 72 DPI (2.5 ≈ 180 DPI) — upscaled for legibility of hand-drawn detail/labels. */
+const PDF_RENDER_SCALE = 2.5;
+
 /**
  * Ensures the payload sent to the vision provider is always a plain raster
  * image. If the upload is a PDF, rasterizes the first page to a PNG using
- * pdfjs-dist for parsing/rendering and node-canvas as the rendering surface.
+ * `mupdf` (see the license/rationale note in this file's header comment).
  * This step is provider-agnostic and runs before either Claude or Gemini sees
  * the file.
  */
@@ -122,51 +142,24 @@ async function normalizeToImage(
   }
 
   try {
-    // Dynamic imports keep these heavyweight, Node-only deps out of the Edge bundle graph.
-    const [{ getDocument, GlobalWorkerOptions }, pdfWorkerModule, { createCanvas }] = await Promise.all([
-      import("pdfjs-dist/legacy/build/pdf.mjs"),
-      import("pdfjs-dist/legacy/build/pdf.worker.mjs"),
-      import("canvas"),
-    ]);
-
-    // pdfjs-dist's Node.js "fake worker" fallback normally tries to dynamically
-    // `import()` whatever GlobalWorkerOptions.workerSrc resolves to — but that
-    // resolution is finicky across bundlers/runtimes and is what was producing
-    // 'Setting up fake worker failed: No "GlobalWorkerOptions.workerSrc"
-    // specified'. Sidestep it entirely by registering the worker's message
-    // handler directly on globalThis.pdfjsWorker, which pdfjs-dist checks
-    // FIRST (before ever touching workerSrc) — see PDFWorker._setupFakeWorkerGlobal
-    // in pdfjs-dist's source. We still set workerSrc too, as a harmless
-    // defensive fallback in case that internal check ever changes.
-    (globalThis as unknown as { pdfjsWorker?: unknown }).pdfjsWorker = {
-      WorkerMessageHandler: pdfWorkerModule.WorkerMessageHandler,
-    };
-    GlobalWorkerOptions.workerSrc = "pdfjs-dist/legacy/build/pdf.worker.mjs";
+    // Dynamic import keeps this heavyweight, Node-only dep out of the Edge bundle graph.
+    const mupdf = await import("mupdf");
 
     const pdfBuffer = Buffer.from(fileBase64, "base64");
-    const loadingTask = getDocument({ data: new Uint8Array(pdfBuffer) });
-    const pdfDocument = await loadingTask.promise;
+    const document = mupdf.Document.openDocument(pdfBuffer, "application/pdf");
 
-    if (pdfDocument.numPages < 1) {
+    if (document.countPages() < 1) {
       throw new VisionExtractionError(`"${fileName}" is an empty PDF with no pages.`);
     }
 
-    const page = await pdfDocument.getPage(1);
-    const targetDpiScale = 2.5; // Upscale for legibility of hand-drawn detail/labels.
-    const viewport = page.getViewport({ scale: targetDpiScale });
+    const page = document.loadPage(0); // mupdf pages are 0-indexed; we always take the first page.
+    const matrix = mupdf.Matrix.scale(PDF_RENDER_SCALE, PDF_RENDER_SCALE);
+    // alpha: false -> opaque white background (better for a vision model than transparency).
+    // showExtras: true -> include annotations/form field appearances, matching what a viewer would see.
+    const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false, true);
+    const pngBytes = pixmap.asPNG();
 
-    const canvas = createCanvas(viewport.width, viewport.height);
-    const context = canvas.getContext("2d");
-
-    await page.render({
-      // node-canvas's 2D context is API-compatible with the browser CanvasRenderingContext2D
-      // that pdfjs expects here.
-      canvasContext: context as unknown as CanvasRenderingContext2D,
-      viewport,
-    }).promise;
-
-    const pngBuffer = canvas.toBuffer("image/png");
-    return { imageBase64: pngBuffer.toString("base64"), mediaType: "image/png" };
+    return { imageBase64: Buffer.from(pngBytes).toString("base64"), mediaType: "image/png" };
   } catch (err) {
     if (err instanceof VisionExtractionError) throw err;
     throw new VisionExtractionError(

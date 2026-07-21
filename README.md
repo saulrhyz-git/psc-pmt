@@ -67,14 +67,25 @@ be changed from the Settings panel.
 
 ### PDF support
 
-PDF uploads are rasterized server-side (first page) with `pdfjs-dist` +
-`node-canvas` before being sent to whichever vision provider is selected.
-`node-canvas` requires native build tooling (Cairo/Pango); on most systems
-`npm install` handles this automatically via prebuilt binaries. If the
-`canvas` package fails to build, consult
-https://github.com/Automattic/node-canvas#compiling for platform-specific
-prerequisites, or restrict uploads to image files (PNG/JPEG/WEBP) in
-`components/UploadZone.tsx`.
+PDF uploads are rasterized server-side (first page, to PNG) with
+[`mupdf`](https://www.npmjs.com/package/mupdf) before being sent to whichever
+vision provider is selected. `mupdf` is WASM-based — plain `npm install`,
+**no native compiler, no system libraries (Cairo/Pango/poppler) needed**,
+which matters if your students are on machines without build tooling set up.
+
+An earlier version of this project used `pdfjs-dist` + `node-canvas` for this
+step; that combination has a known, currently-unresolved upstream bug
+(`TypeError: Image or Canvas expected`) that breaks on any PDF containing an
+embedded raster image — see the comment at the top of
+`app/api/analyze/route.ts` for the full writeup and links to the relevant
+GitHub issues.
+
+**License note:** `mupdf` is AGPL-3.0-or-later (Artifex also sells a
+commercial license for anyone who can't comply with AGPL terms — see
+https://artifex.com/contact/mupdf-js). That's stricter than the permissive
+licenses used elsewhere in this project. Fine for running locally / in a
+classroom; worth a second look before offering this as a hosted service to
+others.
 
 ## Project structure
 
