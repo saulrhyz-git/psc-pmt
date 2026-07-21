@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Building2,
+  FolderPlus,
   Layers,
   Loader2,
   Ruler,
@@ -39,6 +40,7 @@ import RoomBreakdownTable from "@/components/RoomBreakdownTable";
 import FurnitureOverlay from "@/components/FurnitureOverlay";
 import MaterialEstimator from "@/components/MaterialEstimator";
 import ProviderSelector from "@/components/ProviderSelector";
+import AddToProjectModal from "@/components/AddToProjectModal";
 import type {
   AnalysisStatus,
   AnalyzeResponseBody,
@@ -68,6 +70,7 @@ interface PlanAnalyzerToolProps {
 export default function PlanAnalyzerTool({ canConfigureSettings, onOpenSettings }: PlanAnalyzerToolProps) {
   const [uploadedFile, setUploadedFile] = useState<UploadedFileState | null>(null);
   const [knownScale, setKnownScale] = useState("");
+  const [context, setContext] = useState("");
   // Default to Gemini: it has a free tier, which matters most for students /
   // no-budget users. Anyone with an Anthropic key can switch to Claude below.
   const [provider, setProvider] = useState<VisionProvider>("gemini");
@@ -77,6 +80,7 @@ export default function PlanAnalyzerTool({ canConfigureSettings, onOpenSettings 
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [visibleFurnitureIds, setVisibleFurnitureIds] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<TabKey>("breakdown");
+  const [showAddToProject, setShowAddToProject] = useState(false);
 
   // Remember the last provider choice across visits (e.g. a classroom of
   // students who all pick Gemini once and don't want to re-select it).
@@ -125,6 +129,7 @@ export default function PlanAnalyzerTool({ canConfigureSettings, onOpenSettings 
           mimeType: uploadedFile.mimeType,
           provider,
           knownScale: knownScale.trim() || undefined,
+          context: context.trim() || undefined,
         }),
       });
 
@@ -141,7 +146,7 @@ export default function PlanAnalyzerTool({ canConfigureSettings, onOpenSettings 
       setError(err instanceof Error ? err.message : "An unknown error occurred while analyzing the plan.");
       setStatus("error");
     }
-  }, [uploadedFile, knownScale, provider]);
+  }, [uploadedFile, knownScale, context, provider]);
 
   const criticalCommentCount = useMemo(
     () => result?.spacePlanningComments.filter((c) => c.severity === "critical" || c.severity === "warning").length ?? 0,
@@ -166,6 +171,8 @@ export default function PlanAnalyzerTool({ canConfigureSettings, onOpenSettings 
           isAnalyzing={status === "analyzing"}
           knownScale={knownScale}
           onKnownScaleChange={setKnownScale}
+          context={context}
+          onContextChange={setContext}
           provider={provider}
           onProviderChange={handleProviderChange}
           onOpenSettings={onOpenSettings}
@@ -175,7 +182,12 @@ export default function PlanAnalyzerTool({ canConfigureSettings, onOpenSettings 
         />
       ) : (
         <div className="flex flex-col gap-6">
-          <ResultSummaryBar result={result} onStartOver={handleClear} criticalCount={criticalCommentCount} />
+          <ResultSummaryBar
+            result={result}
+            onStartOver={handleClear}
+            criticalCount={criticalCommentCount}
+            onAddToProject={() => setShowAddToProject(true)}
+          />
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_380px]">
             <div className="flex flex-col gap-6">
@@ -233,6 +245,13 @@ export default function PlanAnalyzerTool({ canConfigureSettings, onOpenSettings 
               <MetadataPanel result={result} />
             </aside>
           </div>
+
+          <AddToProjectModal
+            open={showAddToProject}
+            onClose={() => setShowAddToProject(false)}
+            result={result}
+            context={context}
+          />
         </div>
       )}
     </div>
@@ -250,6 +269,8 @@ function UploadPanel({
   isAnalyzing,
   knownScale,
   onKnownScaleChange,
+  context,
+  onContextChange,
   provider,
   onProviderChange,
   onOpenSettings,
@@ -263,6 +284,8 @@ function UploadPanel({
   isAnalyzing: boolean;
   knownScale: string;
   onKnownScaleChange: (v: string) => void;
+  context: string;
+  onContextChange: (v: string) => void;
   provider: VisionProvider;
   onProviderChange: (p: VisionProvider) => void;
   onOpenSettings: () => void;
@@ -311,6 +334,20 @@ function UploadPanel({
             />
           </label>
 
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-slate-500">
+              Context (optional) — anything the AI should factor into the analysis, e.g. &quot;this is a 2-bedroom
+              bungalow, client wants an open-concept kitchen&quot;
+            </span>
+            <textarea
+              value={context}
+              onChange={(e) => onContextChange(e.target.value)}
+              placeholder="Add notes, requirements, or background for the AI to consider"
+              maxLength={4000}
+              className="min-h-[70px] resize-y rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            />
+          </label>
+
           <button
             type="button"
             onClick={onAnalyze}
@@ -343,10 +380,12 @@ function ResultSummaryBar({
   result,
   onStartOver,
   criticalCount,
+  onAddToProject,
 }: {
   result: PlanAnalysisResult;
   onStartOver: () => void;
   criticalCount: number;
+  onAddToProject: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
@@ -366,13 +405,23 @@ function ResultSummaryBar({
           />
         )}
       </div>
-      <button
-        type="button"
-        onClick={onStartOver}
-        className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-      >
-        Analyze another plan
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onAddToProject}
+          className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-indigo-700"
+        >
+          <FolderPlus className="h-3.5 w-3.5" />
+          Add to Project
+        </button>
+        <button
+          type="button"
+          onClick={onStartOver}
+          className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+        >
+          Analyze another plan
+        </button>
+      </div>
     </div>
   );
 }

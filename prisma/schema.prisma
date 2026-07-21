@@ -133,10 +133,12 @@ model Project {
   createdAt            DateTime      @default(now()) @map("created_at")
   updatedAt            DateTime      @updatedAt @map("updated_at")
 
-  tasks       Task[]
-  budgetItems BudgetLineItem[]
-  crew        CrewMember[]
-  equipment   Equipment[]
+  tasks          Task[]
+  budgetItems    BudgetLineItem[]
+  crew           CrewMember[]
+  equipment      Equipment[]
+  referenceFiles ReferenceFile[]
+  planAnalyses   PlanAnalysis[]
 
   @@map("projects")
 }
@@ -240,4 +242,66 @@ model BudgetTemplateLineItem {
 
   @@index([templateId])
   @@map("budget_template_line_items")
+}
+
+// -----------------------------------------------------------------------------
+// Reference Files + saved Plan Analyses (see lib/reference-file-store.ts,
+// lib/plan-analysis-store.ts)
+//
+// Each Project Management project has its own reference-file library
+// (per-project, not global — spec sheets/codes/notes relevant to that job).
+// The AI Plan Analyzer's "Add to Project" action does two things atomically:
+//   1. persists the full computed PlanAnalysisResult as a PlanAnalysis row
+//      (viewable later from the Project Management tab), and
+//   2. renders a PDF report of that analysis and drops it into the same
+//      project's ReferenceFile library, linked back via sourceAnalysisId.
+// Deleting a PlanAnalysis does NOT delete its generated PDF (onDelete:
+// SetNull) — once a report is in the reference library it stands on its own.
+// Deleting the project cascades to both, like every other per-project table.
+// -----------------------------------------------------------------------------
+
+enum AnalysisProvider {
+  claude
+  gemini
+}
+
+model ReferenceFile {
+  id               String        @id @default(uuid())
+  projectId        String        @map("project_id")
+  project          Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fileName         String        @map("file_name")
+  mimeType         String        @map("mime_type")
+  fileSize         Int           @map("file_size")
+  description      String?
+  /// Raw file bytes, stored directly in Postgres (bytea) — consistent with
+  /// the rest of the app's "no separate file storage" architecture.
+  data             Bytes
+  sourceAnalysisId String?       @unique @map("source_analysis_id")
+  sourceAnalysis   PlanAnalysis? @relation(fields: [sourceAnalysisId], references: [id], onDelete: SetNull)
+  createdAt        DateTime      @default(now()) @map("created_at")
+
+  @@index([projectId])
+  @@map("reference_files")
+}
+
+model PlanAnalysis {
+  id            String            @id @default(uuid())
+  projectId     String            @map("project_id")
+  project       Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Original uploaded blueprint's file name (the source image/PDF itself is
+  /// not persisted — only the computed extraction result).
+  fileName      String            @map("file_name")
+  provider      AnalysisProvider
+  /// The free-text Context field value supplied at analysis time, if any.
+  context       String?
+  /// The full PlanAnalysisResult (rooms, walls, openings, fixtures,
+  /// svgVectorData, cost estimate, etc.) — see lib/types.ts. Stored as jsonb
+  /// rather than normalized tables since it's read/written as one unit and
+  /// never queried by its internal fields.
+  resultJson    Json              @map("result_json")
+  referenceFile ReferenceFile?
+  createdAt     DateTime          @default(now()) @map("created_at")
+
+  @@index([projectId])
+  @@map("plan_analyses")
 }

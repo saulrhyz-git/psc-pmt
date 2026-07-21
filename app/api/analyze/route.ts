@@ -81,6 +81,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<AnalyzeRespon
       fileName: body.fileName,
       knownScale: body.knownScale,
       referenceMeasurementFt: body.referenceMeasurementFt,
+      context: body.context,
     });
 
     return NextResponse.json({ success: true, result }, { status: 200 });
@@ -119,6 +120,14 @@ function validateRequestBody(body: AnalyzeRequestBody | undefined): string | nul
     (typeof body.referenceMeasurementFt !== "number" || body.referenceMeasurementFt <= 0)
   ) {
     return "`referenceMeasurementFt`, if provided, must be a positive number.";
+  }
+
+  if (body.context !== undefined && typeof body.context !== "string") {
+    return "`context`, if provided, must be a string.";
+  }
+  const MAX_CONTEXT_CHARS = 4000;
+  if (typeof body.context === "string" && body.context.length > MAX_CONTEXT_CHARS) {
+    return `\`context\` is too long. Max ${MAX_CONTEXT_CHARS} characters.`;
   }
 
   return null;

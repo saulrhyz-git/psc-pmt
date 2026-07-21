@@ -94,7 +94,12 @@ Critical rules for extraction:
 
 Think carefully and look closely at the image before producing your final answer.`;
 
-export function buildUserPrompt(fileName: string, knownScale?: string, referenceMeasurementFt?: number): string {
+export function buildUserPrompt(
+  fileName: string,
+  knownScale?: string,
+  referenceMeasurementFt?: number,
+  context?: string
+): string {
   const hints: string[] = [];
   if (knownScale) {
     hints.push(`The user has indicated the plan's scale is: "${knownScale}". Prefer this over any heuristic guess.`);
@@ -102,6 +107,11 @@ export function buildUserPrompt(fileName: string, knownScale?: string, reference
   if (referenceMeasurementFt) {
     hints.push(
       `The user has indicated a known reference measurement of ${referenceMeasurementFt} ft somewhere on the plan (typically the front door or a labeled wall). Use it to sanity-check your scale calibration.`
+    );
+  }
+  if (context && context.trim()) {
+    hints.push(
+      `Additional context provided by the user — take this into account throughout your analysis (layout description, space planning review, and furniture suggestions especially):\n"""\n${context.trim()}\n"""`
     );
   }
 

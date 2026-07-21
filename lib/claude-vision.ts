@@ -79,6 +79,8 @@ export interface AnalyzePlanImageInput {
   fileName: string;
   knownScale?: string;
   referenceMeasurementFt?: number;
+  /** Optional free-text context appended to the model's user prompt. */
+  context?: string;
 }
 
 /**
@@ -115,7 +117,7 @@ export async function analyzePlanImage(input: AnalyzePlanImageInput): Promise<Pl
             },
             {
               type: "text",
-              text: buildUserPrompt(input.fileName, input.knownScale, input.referenceMeasurementFt),
+              text: buildUserPrompt(input.fileName, input.knownScale, input.referenceMeasurementFt, input.context),
             },
           ],
         },

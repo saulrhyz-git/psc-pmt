@@ -24,8 +24,10 @@ import BudgetTracker from "@/components/pm/BudgetTracker";
 import ResourceManagement from "@/components/pm/ResourceManagement";
 import ExportButton from "@/components/pm/ExportButton";
 import StatusBadge from "@/components/pm/StatusBadge";
+import ReferenceFileLibrary from "@/components/pm/ReferenceFileLibrary";
+import PlanAnalysesList from "@/components/pm/PlanAnalysesList";
 
-type PmTab = "dashboard" | "tasks" | "gantt" | "budget" | "resources";
+type PmTab = "dashboard" | "tasks" | "gantt" | "budget" | "resources" | "plan-analyses" | "reference-files";
 
 const TABS: { key: PmTab; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
@@ -33,6 +35,8 @@ const TABS: { key: PmTab; label: string }[] = [
   { key: "gantt", label: "Gantt Timeline" },
   { key: "budget", label: "Budget" },
   { key: "resources", label: "Resources" },
+  { key: "plan-analyses", label: "Plan Analyses" },
+  { key: "reference-files", label: "Reference Files" },
 ];
 
 export default function ProjectManagementTool() {
@@ -197,6 +201,8 @@ export default function ProjectManagementTool() {
               onChanged={handleChanged}
             />
           )}
+          {activeTab === "plan-analyses" && <PlanAnalysesList projectId={bundle.project.id} />}
+          {activeTab === "reference-files" && <ReferenceFileLibrary projectId={bundle.project.id} />}
         </>
       )}
 

@@ -416,6 +416,13 @@ export interface AnalyzeRequestBody {
   knownScale?: string;
   /** Optional user-provided reference measurement to aid calibration. */
   referenceMeasurementFt?: number;
+  /**
+   * Optional free-text context supplied by the user (e.g. "this is a 2-story
+   * duplex, focus on the ground floor" or "client wants an open-concept
+   * kitchen"). Passed straight through to the vision model's user prompt —
+   * see lib/plan-extraction-schema.ts's buildUserPrompt.
+   */
+  context?: string;
 }
 
 export interface AnalyzeResponseBody {

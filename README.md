@@ -23,6 +23,11 @@ Upload a blueprint, hand sketch, or architectural drawing (image or PDF) and get
 5. A clean, redrawn, interactive SVG plan with pan/zoom and layer toggles (walls, labels, dimensions, furniture).
 6. A material and cost estimator with editable unit costs.
 
+Two more inputs/outputs sit around the core analysis:
+
+- **Context field** — optional free text ("this is a 2-bedroom bungalow, client wants an open-concept kitchen") sent straight through to the vision model's prompt alongside the image, so the AI factors it into the layout description, space-planning review, and furniture suggestions.
+- **Add to Project** — after a successful analysis, save it to a Project Management project in one click. This persists the full result (viewable later from that project's **Plan Analyses** tab) and generates a PDF report that's automatically added to the project's **Reference Files** library. See "Reference Files & Plan Analyses" under Tool #2 below.
+
 ## Stack
 
 Next.js 14 (App Router) + TypeScript + Tailwind CSS + lucide-react. Vision
@@ -197,6 +202,28 @@ restrictions (e.g. view-only for students) are a planned future enhancement
 to its tasks/budget/crew/equipment automatically via foreign-key
 `onDelete: Cascade` — no manual cleanup code needed.
 
+### Reference Files & Plan Analyses
+
+Two more per-project tabs, populated either manually or by Tool #1:
+
+- **Reference Files** — a per-project document library (spec sheets, code
+  excerpts, client notes, anything worth keeping alongside the job). Upload
+  any file type; it's stored as raw bytes directly in Postgres (`reference_files`
+  table, see `lib/reference-file-store.ts`) — no separate object storage.
+- **Plan Analyses** — every AI Plan Analyzer result saved to this project via
+  "Add to Project" (`plan_analyses` table, storing the full `PlanAnalysisResult`
+  as `jsonb`, see `lib/plan-analysis-store.ts`). Click one to reopen the room
+  breakdown, redrawn plan, and furniture suggestions exactly as they appeared
+  in the Analyzer.
+
+"Add to Project" does both in one atomic transaction: it writes the
+`PlanAnalysis` row, renders a PDF report of the analysis with
+[`pdfkit`](https://www.npmjs.com/package/pdfkit) (`lib/plan-analysis-pdf.ts`),
+and adds that PDF as a `ReferenceFile` linked back to the analysis via
+`sourceAnalysisId`. Deleting the saved analysis later does **not** delete its
+PDF (`onDelete: SetNull`) — once a report is in the reference library it
+stands on its own. Deleting the whole project cascades to both.
+
 ## Settings & Templates
 
 A sidebar tab with two sub-tabs:
@@ -241,6 +268,8 @@ app/
       [id]/crew/route.ts + [memberId]/route.ts      # Crew CRUD
       [id]/equipment/route.ts + [itemId]/route.ts   # Equipment CRUD
       [id]/export/route.ts    # GET — one-click Excel export (SheetJS)
+      [id]/reference-files/route.ts + [fileId]/route.ts   # Reference file library CRUD (upload/list/download/delete)
+      [id]/plan-analyses/route.ts + [analysisId]/route.ts # Saved Plan Analyses: list/create ("Add to Project")/get/delete
     templates/
       budget/route.ts         # GET list / POST create a Budget template
       budget/[id]/route.ts    # PATCH/DELETE a Budget template
@@ -250,6 +279,7 @@ app/
 components/
   Sidebar.tsx                # Collapsible nav: Plan Analyzer / Project Management / Settings & Templates
   PlanAnalyzerTool.tsx        # Tool #1's full UI (extracted from app/page.tsx)
+  AddToProjectModal.tsx       # "Add to Project" flow: picks a project, POSTs the result
   UploadZone.tsx            # Drag-and-drop upload
   ProviderSelector.tsx      # Claude vs. Gemini picker (free-tier note for Gemini)
   UserManagement.tsx          # Admin-only: enroll/remove students, list users
@@ -269,6 +299,8 @@ components/
     ExportButton.tsx            # Triggers the Excel export download
     StatusBadge.tsx             # Shared status pill (task/project/crew/equipment)
     phase-colors.ts             # Deterministic phase -> color mapping
+    ReferenceFileLibrary.tsx    # Per-project reference file upload/list/download/delete
+    PlanAnalysesList.tsx        # Saved Plan Analyses list + detail view (reuses Tool #1's viewer components)
   settings-templates/
     SettingsTemplatesTool.tsx   # Sidebar tab orchestrator: Templates / Settings sub-tabs
     AiProviderSettings.tsx      # AI provider keys/models (admin-only, no modal chrome)
@@ -291,6 +323,11 @@ lib/
   project-kpi-utils.ts         # Pure KPI math over a ProjectBundle (client-safe)
   template-types.ts            # Templates' TypeScript schema (client-safe)
   template-store.ts            # Templates' server-only Postgres persistence + CRUD
+  reference-file-types.ts      # Reference Files' TypeScript schema (client-safe)
+  reference-file-store.ts      # Reference Files' server-only Postgres persistence (bytea) + CRUD
+  plan-analysis-types.ts       # Saved Plan Analyses' TypeScript schema (client-safe)
+  plan-analysis-store.ts       # Saved Plan Analyses' server-only Postgres persistence ("Add to Project")
+  plan-analysis-pdf.ts         # Renders a PlanAnalysisResult to a PDF report (pdfkit)
   types.ts                    # Full TypeScript schema for Tool #1 + the app shell
 ```
 

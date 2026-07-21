@@ -32,6 +32,8 @@ export interface AnalyzePlanImageInput {
   fileName: string;
   knownScale?: string;
   referenceMeasurementFt?: number;
+  /** Optional free-text context appended to the model's user prompt — see lib/plan-extraction-schema.ts. */
+  context?: string;
 }
 
 /**
