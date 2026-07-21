@@ -540,6 +540,12 @@ export interface ChangePasswordRequestBody {
 }
 
 // -----------------------------------------------------------------------------
+// App shell (sidebar navigation between tools — see components/Sidebar.tsx)
+// -----------------------------------------------------------------------------
+
+export type AppTool = "plan-analyzer" | "project-management";
+
+// -----------------------------------------------------------------------------
 // UI state helpers
 // -----------------------------------------------------------------------------
 

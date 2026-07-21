@@ -11,3 +11,7 @@ node_modules/
 # Local auth store (session secret + hashed user passwords, incl. the seeded
 # master admin — see lib/auth.ts). Never commit this.
 .auth-users.local.json
+
+# Project Management data (Tool #2) — projects, tasks, budget, crew,
+# equipment. Local, per-installation data — see lib/project-store.ts.
+.projects-data.local.json

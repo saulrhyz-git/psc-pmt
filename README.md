@@ -1,7 +1,16 @@
-# AI Architectural Plan Analyzer & Redrawer
+# Construction Multitool
 
-Tool #1 of the construction multitool web app. Upload a blueprint, hand sketch,
-or architectural drawing (image or PDF) and get:
+A small suite of construction tools behind a single login, navigated from a
+collapsible sidebar:
+
+- **Tool #1 — AI Plan Analyzer & Redrawer**: upload a blueprint and get an
+  AI-driven layout analysis, redraw, and cost estimate.
+- **Tool #2 — Project Management**: track multiple construction projects —
+  tasks, schedule, budget, and crew/equipment resources.
+
+## Tool #1: AI Plan Analyzer & Redrawer
+
+Upload a blueprint, hand sketch, or architectural drawing (image or PDF) and get:
 
 1. A narrative layout description and room breakdown.
 2. Automated area, perimeter, and wall-surface calculations with scale calibration.
@@ -116,6 +125,40 @@ licenses used elsewhere in this project. Fine for running locally / in a
 classroom; worth a second look before offering this as a hosted service to
 others.
 
+## Tool #2: Project Management
+
+Manage multiple construction projects from one dashboard, selected via a
+dropdown at the top of the tab:
+
+1. **Multiple projects** — create a project with name, project in charge,
+   client name, date started, target completion, project type, address,
+   total budget, status, and notes.
+2. **Dashboard KPIs** — active tasks, overall progress, budget burn, and
+   active crew count, computed live from the project's tasks/budget/crew
+   (`lib/project-kpi-utils.ts`).
+3. **Task Management** — searchable, filterable (status/phase) task list with
+   progress bars, status badges, priority, assignee, and inline quick edits.
+4. **Gantt Timeline** — a custom, dependency-free schedule view (no charting
+   library) built from each task's start/end dates, color-coded by phase.
+5. **Budget Tracker** — total spend vs. total budget, plus a phase-by-phase
+   breakdown of budgeted/spent/remaining per line item.
+6. **Resource Management** — crew allocation cards (role, % allocation,
+   status) and an equipment status table (type, status, assigned to).
+7. **Data Export** — one-click Excel export (`GET /api/projects/:id/export`)
+   with a separate worksheet per project overview, tasks, budget, crew, and
+   equipment, built with SheetJS (`xlsx` on npm, Apache-2.0 license).
+
+**Access control**: per an explicit product decision, every enrolled user
+(admin or student) can create and edit projects, tasks, budget, and resources
+for now — it's a shared working tool, not a security boundary. Role-based
+restrictions (e.g. view-only for students) are a planned future enhancement
+— see the header comment in `lib/project-types.ts`.
+
+**Storage**: same pattern as AI settings and auth — a single local, gitignored
+JSON file (`.projects-data.local.json`, see `lib/project-store.ts`), read
+fresh and written back on every mutation. No database. Deleting the file
+resets Project Management back to empty (Tool #1 and login are unaffected).
+
 ## Project structure
 
 ```
@@ -131,10 +174,21 @@ app/
       logout/route.ts       # POST — clear session cookie
       me/route.ts            # GET — current session user, if any
       users/route.ts         # Admin-only GET/POST/DELETE/PATCH — enrolled user CRUD
-  page.tsx                  # Main dashboard
+    projects/
+      route.ts               # GET list / POST create a project
+      [id]/route.ts           # GET/PATCH/DELETE a project (cascades on delete)
+      [id]/bundle/route.ts    # GET project + tasks + budget + crew + equipment in one call
+      [id]/tasks/route.ts + [taskId]/route.ts       # Task CRUD
+      [id]/budget/route.ts + [lineItemId]/route.ts  # Budget line item CRUD
+      [id]/crew/route.ts + [memberId]/route.ts      # Crew CRUD
+      [id]/equipment/route.ts + [itemId]/route.ts   # Equipment CRUD
+      [id]/export/route.ts    # GET — one-click Excel export (SheetJS)
+  page.tsx                  # App shell: session gate, sidebar, top bar, active-tool switch
   layout.tsx
   globals.css
 components/
+  Sidebar.tsx                # Collapsible nav between Plan Analyzer and Project Management
+  PlanAnalyzerTool.tsx        # Tool #1's full UI (extracted from app/page.tsx)
   UploadZone.tsx            # Drag-and-drop upload
   ProviderSelector.tsx      # Claude vs. Gemini picker (free-tier note for Gemini)
   SettingsPanel.tsx          # In-app API key / model settings + user management modal (admin-only)
@@ -144,6 +198,17 @@ components/
   RoomBreakdownTable.tsx     # Dimensions, areas, space-planning flags
   FurnitureOverlay.tsx       # Furniture suggestion visibility controls
   MaterialEstimator.tsx      # Editable cost/material breakdown
+  pm/
+    ProjectManagementTool.tsx # Tool #2's orchestrator: project picker + sub-tabs
+    AddProjectModal.tsx       # New project form
+    KpiCards.tsx               # Dashboard KPI strip
+    TaskList.tsx                # Searchable/filterable task table
+    GanttChart.tsx              # Custom CSS-based schedule timeline
+    BudgetTracker.tsx           # Budget vs. spend + phase breakdown
+    ResourceManagement.tsx      # Crew cards + equipment table
+    ExportButton.tsx            # Triggers the Excel export download
+    StatusBadge.tsx             # Shared status pill (task/project/crew/equipment)
+    phase-colors.ts             # Deterministic phase -> color mapping
 lib/
   plan-extraction-schema.ts  # Shared prompt, JSON schema, and post-processing (provider-agnostic)
   claude-vision.ts            # Anthropic-specific API call mechanics
@@ -155,7 +220,10 @@ lib/
   auth-constants.ts            # Cookie name/expiry constants shared with Edge middleware
   measurement-utils.ts        # Scale calibration + geometry math
   estimate-utils.ts           # Pure material/cost pricing engine (shared client+server)
-  types.ts                    # Full TypeScript schema for the whole pipeline
+  project-types.ts             # Tool #2's TypeScript schema (client-safe, no fs/SDK imports)
+  project-store.ts             # Tool #2's server-only JSON-file persistence + CRUD
+  project-kpi-utils.ts         # Pure KPI math over a ProjectBundle (client-safe)
+  types.ts                    # Full TypeScript schema for Tool #1 + the app shell
 ```
 
 ## Architecture notes

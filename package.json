@@ -1,8 +1,8 @@
 {
-  "name": "plan-analyzer-redrawer",
+  "name": "construction-multitool",
   "version": "0.1.0",
   "private": true,
-  "description": "Tool #1 of the construction multitool web app: AI Architectural Plan Analyzer & Redrawer",
+  "description": "Construction multitool web app: AI Plan Analyzer & Redrawer (Tool #1) + Project Management (Tool #2)",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -17,7 +17,8 @@
     "mupdf": "^1.28.0",
     "next": "^14.2.15",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
