@@ -6,3 +6,169 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum ProjectStatus {
+  planning
+  active
+  on_hold  @map("on-hold")
+  completed
+}
+
+enum TaskStatus {
+  not_started  @map("not-started")
+  in_progress  @map("in-progress")
+  completed
+}
+
+enum TaskPriority {
+  low
+  medium
+  high
+}
+
+enum CrewStatus {
+  active
+  inactive
+  on_leave  @map("on-leave")
+}
+
+enum EquipmentStatus {
+  available
+  in_use       @map("in-use")
+  maintenance
+}
+
+enum BudgetCategory {
+  labor
+  materials
+  equipment
+  permits
+  subcontractor
+  contingency
+  other
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  role         String   @default("user")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model AppSecret {
+  id            Int    @id
+  sessionSecret String
+}
+
+model AiSettings {
+  id          Int     @id
+  geminiApiKey String?
+  geminiModel  String?
+  claudeApiKey String?
+  claudeModel  String?
+}
+
+model Project {
+  id                   String    @id
+  name                 String
+  projectInCharge      String
+  clientName           String
+  dateStarted          String
+  targetCompletionDate String?
+  address              String?
+  projectType          String?
+  totalBudget          Decimal   @default(0)
+  status               ProjectStatus @default(planning)
+  notes                String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  tasks       Task[]
+  budgetItems BudgetLineItem[]
+  crew        CrewMember[]
+  equipment   Equipment[]
+}
+
+model Task {
+  id              String      @id
+  projectId       String
+  title           String
+  description     String?
+  phase           String
+  status          TaskStatus  @default(not_started)
+  progressPercent Int         @default(0)
+  assignee        String?
+  priority        TaskPriority @default(medium)
+  startDate       String
+  endDate         String
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model BudgetLineItem {
+  id          String         @id
+  projectId   String
+  phase       String
+  category    BudgetCategory
+  description String?
+  budgeted    Decimal        @default(0)
+  spent       Decimal        @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model CrewMember {
+  id                String     @id
+  projectId         String
+  name              String
+  role              String
+  allocationPercent Int        @default(100)
+  status            CrewStatus @default(active)
+  notes             String?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Equipment {
+  id            String          @id
+  projectId     String
+  name          String
+  equipmentType String
+  status        EquipmentStatus @default(available)
+  assignedTo    String?
+  notes         String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model BudgetTemplate {
+  id        String           @id
+  name      String
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  lineItems BudgetTemplateLineItem[]
+}
+
+model BudgetTemplateLineItem {
+  id         String         @id
+  templateId String
+  phase      String
+  category   BudgetCategory
+  description String?
+  budgeted   Decimal        @default(0)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  template BudgetTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+}
