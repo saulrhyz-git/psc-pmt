@@ -128,8 +128,16 @@ async function normalizeToImage(
       import("canvas"),
     ]);
 
-    // Disable the worker in the server runtime; pdfjs runs synchronously in-process instead.
-    GlobalWorkerOptions.workerSrc = "";
+    // pdfjs-dist still probes for a real worker script even in Node, and treats
+    // an empty-string workerSrc as "not specified" — leading to the
+    // 'Setting up fake worker failed: No "GlobalWorkerOptions.workerSrc"
+    // specified' error. Point it at the actual worker file pdfjs-dist ships so
+    // its synchronous, in-process fallback ("fake worker") can load correctly.
+    if (!GlobalWorkerOptions.workerSrc) {
+      const { createRequire } = await import("node:module");
+      const require = createRequire(import.meta.url);
+      GlobalWorkerOptions.workerSrc = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
+    }
 
     const pdfBuffer = Buffer.from(fileBase64, "base64");
     const loadingTask = getDocument({ data: new Uint8Array(pdfBuffer) });
