@@ -16,12 +16,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Building2,
   Compass,
   Layers,
   Loader2,
+  LogOut,
   Ruler,
   Settings as SettingsIcon,
   Sofa,
@@ -39,7 +41,9 @@ import SettingsPanel from "@/components/SettingsPanel";
 import type {
   AnalysisStatus,
   AnalyzeResponseBody,
+  MeResponseBody,
   PlanAnalysisResult,
+  SessionUser,
   UploadedFileState,
   VisionProvider,
 } from "@/lib/types";
@@ -58,6 +62,7 @@ const TABS: { key: TabKey; label: string; icon: typeof Table2 }[] = [
 ];
 
 export default function PlanAnalyzerPage() {
+  const router = useRouter();
   const [uploadedFile, setUploadedFile] = useState<UploadedFileState | null>(null);
   const [knownScale, setKnownScale] = useState("");
   // Default to Gemini: it has a free tier, which matters most for students /
@@ -70,6 +75,8 @@ export default function PlanAnalyzerPage() {
   const [visibleFurnitureIds, setVisibleFurnitureIds] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<TabKey>("breakdown");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
 
   // Remember the last provider choice across visits (e.g. a classroom of
   // students who all pick Gemini once and don't want to re-select it).
@@ -77,6 +84,39 @@ export default function PlanAnalyzerPage() {
     const saved = window.localStorage.getItem(PROVIDER_STORAGE_KEY);
     if (saved === "claude" || saved === "gemini") setProvider(saved);
   }, []);
+
+  // middleware.ts redirects page loads with no session cookie at all, but it
+  // can't verify the cookie's signature (Edge runtime has no fs access) — so
+  // a tampered/expired cookie can still reach this page. Confirm the session
+  // is actually valid here and bounce to /login if not.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/me");
+        const payload = (await res.json()) as MeResponseBody;
+        if (cancelled) return;
+        if (!payload.authenticated || !payload.user) {
+          router.replace("/login");
+          return;
+        }
+        setSessionUser(payload.user);
+      } catch {
+        if (!cancelled) router.replace("/login");
+      } finally {
+        if (!cancelled) setSessionLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
+  const handleLogout = useCallback(async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.replace("/login");
+    router.refresh();
+  }, [router]);
 
   const handleProviderChange = useCallback((next: VisionProvider) => {
     setProvider(next);
@@ -141,10 +181,27 @@ export default function PlanAnalyzerPage() {
     [result]
   );
 
+  if (sessionLoading || !sessionUser) {
+    return (
+      <main className="flex min-h-screen items-center justify-center">
+        <div className="flex items-center gap-2 text-sm text-slate-500">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Checking session...
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto flex min-h-screen max-w-[1600px] flex-col gap-6 p-4 sm:p-6 lg:p-8">
-      <Header onOpenSettings={() => setIsSettingsOpen(true)} />
-      <SettingsPanel open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <Header
+        sessionUser={sessionUser}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onLogout={handleLogout}
+      />
+      {sessionUser.role === "admin" && (
+        <SettingsPanel open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      )}
 
       {!result ? (
         <UploadPanel
@@ -157,6 +214,7 @@ export default function PlanAnalyzerPage() {
           provider={provider}
           onProviderChange={handleProviderChange}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          canConfigureSettings={sessionUser.role === "admin"}
           onAnalyze={runAnalysis}
           error={error}
         />
@@ -230,7 +288,15 @@ export default function PlanAnalyzerPage() {
 // Sub-sections
 // -----------------------------------------------------------------------------
 
-function Header({ onOpenSettings }: { onOpenSettings: () => void }) {
+function Header({
+  sessionUser,
+  onOpenSettings,
+  onLogout,
+}: {
+  sessionUser: SessionUser;
+  onOpenSettings: () => void;
+  onLogout: () => void;
+}) {
   return (
     <header className="flex items-center justify-between gap-3">
       <div className="flex items-center gap-3">
@@ -245,14 +311,34 @@ function Header({ onOpenSettings }: { onOpenSettings: () => void }) {
           </p>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={onOpenSettings}
-        className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
-      >
-        <SettingsIcon className="h-4 w-4" />
-        <span className="hidden sm:inline">Settings</span>
-      </button>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="hidden text-xs text-slate-500 sm:inline">
+          Signed in as <span className="font-medium text-slate-700">{sessionUser.username}</span>
+          {sessionUser.role === "admin" && (
+            <span className="ml-1 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">
+              admin
+            </span>
+          )}
+        </span>
+        {sessionUser.role === "admin" && (
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
+          >
+            <SettingsIcon className="h-4 w-4" />
+            <span className="hidden sm:inline">Settings</span>
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onLogout}
+          className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
+        >
+          <LogOut className="h-4 w-4" />
+          <span className="hidden sm:inline">Logout</span>
+        </button>
+      </div>
     </header>
   );
 }
@@ -267,6 +353,7 @@ function UploadPanel({
   provider,
   onProviderChange,
   onOpenSettings,
+  canConfigureSettings,
   onAnalyze,
   error,
 }: {
@@ -279,6 +366,7 @@ function UploadPanel({
   provider: VisionProvider;
   onProviderChange: (p: VisionProvider) => void;
   onOpenSettings: () => void;
+  canConfigureSettings: boolean;
   onAnalyze: () => void;
   error: string | null;
 }) {
@@ -294,14 +382,16 @@ function UploadPanel({
       {!isAnalyzing && (
         <div className="flex flex-col gap-2">
           <ProviderSelector value={provider} onChange={onProviderChange} disabled={isAnalyzing} />
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className="flex w-fit items-center gap-1 text-[11px] font-medium text-indigo-600 hover:underline"
-          >
-            <SettingsIcon className="h-3 w-3" />
-            Configure API keys &amp; models
-          </button>
+          {canConfigureSettings && (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="flex w-fit items-center gap-1 text-[11px] font-medium text-indigo-600 hover:underline"
+            >
+              <SettingsIcon className="h-3 w-3" />
+              Configure API keys &amp; models
+            </button>
+          )}
         </div>
       )}
 

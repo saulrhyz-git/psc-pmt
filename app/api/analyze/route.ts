@@ -33,6 +33,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzePlanImageWithProvider, VISION_PROVIDERS } from "@/lib/vision-provider";
 import { VisionExtractionError } from "@/lib/plan-extraction-schema";
+import { requireSession } from "@/lib/auth";
 import type { AnalyzeRequestBody, AnalyzeResponseBody, SupportedInputMimeType, VisionProvider } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -48,6 +49,13 @@ const SUPPORTED_MIME_TYPES: SupportedInputMimeType[] = [
 const SUPPORTED_PROVIDERS: VisionProvider[] = ["claude", "gemini"];
 
 export async function POST(req: NextRequest): Promise<NextResponse<AnalyzeResponseBody>> {
+  // middleware.ts already blocks requests with no session cookie at all, but
+  // it can't verify the cookie's signature (no fs access on the Edge
+  // runtime) — this is the real authorization check.
+  if (!requireSession(req)) {
+    return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
+  }
+
   let body: AnalyzeRequestBody;
 
   try {

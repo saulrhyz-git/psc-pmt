@@ -18,11 +18,20 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAiSettingsStatus, updateStoredSettings } from "@/lib/ai-settings";
+import { requireAdmin } from "@/lib/auth";
 import type { AiSettingsResponseBody, AiSettingsUpdateBody } from "@/lib/types";
 
 export const runtime = "nodejs";
 
-export async function GET(): Promise<NextResponse<AiSettingsResponseBody>> {
+// AI provider keys/models are shared across every enrolled user, so only the
+// admin may view or change them — a student changing the Gemini key would
+// break analysis for the whole class.
+
+export async function GET(req: NextRequest): Promise<NextResponse<AiSettingsResponseBody>> {
+  if (!requireAdmin(req)) {
+    return NextResponse.json({ success: false, error: "Admin access required." }, { status: 403 });
+  }
+
   try {
     const status = getAiSettingsStatus();
     return NextResponse.json({ success: true, ...status }, { status: 200 });
@@ -37,6 +46,10 @@ export async function GET(): Promise<NextResponse<AiSettingsResponseBody>> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse<AiSettingsResponseBody>> {
+  if (!requireAdmin(req)) {
+    return NextResponse.json({ success: false, error: "Admin access required." }, { status: 403 });
+  }
+
   let body: AiSettingsUpdateBody;
 
   try {

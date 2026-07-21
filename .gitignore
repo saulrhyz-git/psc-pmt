@@ -7,3 +7,7 @@ node_modules/
 
 # In-app AI settings (API keys saved via the Settings panel — see lib/ai-settings.ts)
 .ai-settings.local.json
+
+# Local auth store (session secret + hashed user passwords, incl. the seeded
+# master admin — see lib/auth.ts). Never commit this.
+.auth-users.local.json

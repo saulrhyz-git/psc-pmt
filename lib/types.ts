@@ -483,6 +483,63 @@ export interface AiSettingsResponseBody {
 export type AiSettingsUpdateBody = Partial<StoredAiSettings>;
 
 // -----------------------------------------------------------------------------
+// Authentication (login-gated access — see lib/auth.ts, app/api/auth/*,
+// app/login/page.tsx, components/UserManagement.tsx)
+// -----------------------------------------------------------------------------
+
+export type UserRole = "admin" | "student";
+
+/** Client-safe user record — never includes the password hash. */
+export interface SessionUser {
+  username: string;
+  role: UserRole;
+}
+
+/** Client-safe enrolled-user record for the admin's user management list. */
+export interface EnrolledUser {
+  username: string;
+  role: UserRole;
+  createdAt: string;
+}
+
+export interface LoginRequestBody {
+  username: string;
+  password: string;
+}
+
+export interface LoginResponseBody {
+  success: boolean;
+  user?: SessionUser;
+  error?: string;
+}
+
+export interface MeResponseBody {
+  authenticated: boolean;
+  user?: SessionUser;
+}
+
+export interface UsersListResponseBody {
+  success: boolean;
+  users?: EnrolledUser[];
+  error?: string;
+}
+
+export interface AddUserRequestBody {
+  username: string;
+  password: string;
+  role?: UserRole;
+}
+
+export interface RemoveUserRequestBody {
+  username: string;
+}
+
+export interface ChangePasswordRequestBody {
+  username: string;
+  newPassword: string;
+}
+
+// -----------------------------------------------------------------------------
 // UI state helpers
 // -----------------------------------------------------------------------------
 

@@ -42,6 +42,34 @@ Both providers share the exact same extraction prompt and JSON schema
 (`lib/plan-extraction-schema.ts`) and feed the same deterministic measurement
 math, so results are directly comparable between the two.
 
+## Access control (login required)
+
+Only enrolled users can use the app — every page and API route (except
+`/login` and `/api/auth/*`) requires a signed-in session. See `lib/auth.ts`
+for the implementation.
+
+- **Master admin account**, seeded automatically the first time the app runs:
+  username `saulrhyz`, password `081183`. The password is hashed (scrypt)
+  before it's ever written to disk — it's not stored in plaintext anywhere,
+  and isn't in this README's git history either (this file only documents
+  where to change it, not the live value going forward).
+- Credentials and a random session-signing secret live in a local, gitignored
+  file, `.auth-users.local.json` (created on first run — see `.gitignore`).
+  Delete it to reset everything back to just the seeded master admin.
+- **Enrolling students**: sign in as the master admin, open **Settings → Users**,
+  and add a username/password per student (role "student"). Students can't
+  see or change AI provider settings or manage other users — that's
+  admin-only. Change the master admin's own password there too if you want to
+  move off `081183`.
+- Sessions are HTTP-only signed cookies (30-day expiry), verified with
+  Node's built-in `crypto` (`scrypt` for password hashing, HMAC-SHA256 for
+  session signing) — no new npm dependency was added for this.
+- `middleware.ts` does a fast, Edge-runtime check that a session cookie is
+  *present* and redirects to `/login` if not; the actual signature
+  verification happens per-request in each Node-runtime API route
+  (`requireSession`/`requireAdmin` in `lib/auth.ts`), since Edge middleware
+  has no filesystem access to read the auth store.
+
 ## Setup
 
 ```bash
@@ -49,7 +77,8 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. You can configure API keys two ways:
+Open http://localhost:3000 and sign in (see "Access control" above). You can
+then configure API keys two ways:
 
 1. **In-app (recommended for students)** — click **Settings** in the header (or
    "Configure API keys & models" under the provider picker), paste a Gemini
@@ -90,18 +119,26 @@ others.
 ## Project structure
 
 ```
+middleware.ts                 # Edge-runtime cookie-presence gate (see "Access control" above)
 app/
+  login/page.tsx             # Login form (posts to /api/auth/login)
   api/
     analyze/route.ts        # Upload -> PDF rasterization -> provider dispatch -> PlanAnalysisResult
     estimate/route.ts       # Server-side material/cost estimate endpoint
-    settings/route.ts       # GET/POST in-app AI settings (API keys, model overrides)
+    settings/route.ts       # GET/POST in-app AI settings (admin-only)
+    auth/
+      login/route.ts        # POST — verify credentials, set session cookie
+      logout/route.ts       # POST — clear session cookie
+      me/route.ts            # GET — current session user, if any
+      users/route.ts         # Admin-only GET/POST/DELETE/PATCH — enrolled user CRUD
   page.tsx                  # Main dashboard
   layout.tsx
   globals.css
 components/
   UploadZone.tsx            # Drag-and-drop upload
   ProviderSelector.tsx      # Claude vs. Gemini picker (free-tier note for Gemini)
-  SettingsPanel.tsx          # In-app API key / model settings modal
+  SettingsPanel.tsx          # In-app API key / model settings + user management modal (admin-only)
+  UserManagement.tsx          # Admin-only: enroll/remove students, list users
   PlanViewer.tsx             # Split-screen original vs. redrawn artifact
   SVGPlanRenderer.tsx        # Interactive SVG plan: pan/zoom, layer toggles, room highlighting
   RoomBreakdownTable.tsx     # Dimensions, areas, space-planning flags
@@ -114,6 +151,8 @@ lib/
   vision-provider.ts          # Server-side dispatcher: routes to claude-vision or gemini-vision
   vision-provider-metadata.ts # Client-safe provider labels/descriptions (no SDK imports)
   ai-settings.ts               # In-app settings store (JSON file) with env-var fallback
+  auth.ts                      # Session/user store: scrypt hashing, HMAC session tokens, user CRUD
+  auth-constants.ts            # Cookie name/expiry constants shared with Edge middleware
   measurement-utils.ts        # Scale calibration + geometry math
   estimate-utils.ts           # Pure material/cost pricing engine (shared client+server)
   types.ts                    # Full TypeScript schema for the whole pipeline

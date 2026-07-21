@@ -19,10 +19,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { EstimateRequestBody, EstimateResponseBody, UnitCostSettings } from "@/lib/types";
 import { computeMaterialEstimate } from "@/lib/estimate-utils";
+import { requireSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest): Promise<NextResponse<EstimateResponseBody>> {
+  // middleware.ts already blocks requests with no session cookie at all, but
+  // it can't verify the cookie's signature (no fs access on the Edge
+  // runtime) — this is the real authorization check.
+  if (!requireSession(req)) {
+    return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
+  }
+
   let body: EstimateRequestBody;
 
   try {
