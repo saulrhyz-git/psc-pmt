@@ -2,55 +2,47 @@
  * lib/auth.ts
  * -----------------------------------------------------------------------------
  * Server-only authentication store. Gates the app so only enrolled users can
- * use it. Deliberately built on Node's built-in `crypto` module (no new npm
- * dependency) after this project already learned the pain of native-build
- * dependencies (see app/api/analyze/route.ts's PDF-rasterization history).
+ * use it. Password hashing/session signing is still hand-rolled on Node's
+ * built-in `crypto` module (scrypt + HMAC-SHA256) — that choice predates and
+ * is independent of the storage backend below.
  *
- * Storage: a single local, gitignored JSON file at the project root,
- * `.auth-users.local.json` (see .gitignore). It holds:
- *   - a randomly generated session-signing secret (created once, on first run)
- *   - the list of enrolled users, with scrypt password hashes (never plaintext)
+ * Storage: Postgres via Prisma (see prisma/schema.prisma's `User` and
+ * `AppSecret` models). This used to be a single gitignored JSON file
+ * (`.auth-users.local.json`); the User table replaces the user list, and the
+ * singleton `AppSecret` row (id = 1) replaces the JSON file's random
+ * session-signing secret.
  *
- * On first run this file does not exist, so `loadStore()` creates it and
- * seeds a single master admin account:
- *   username: saulrhyz
- *   password: 081183
- * (hashed before storage — the plaintext password above is never persisted).
+ * Both are created lazily on first access, matching the old JSON file's
+ * "create on first use" behavior:
+ *   - `ensureMasterAdminSeeded()` inserts the seed master admin the first
+ *     time the User table is empty:
+ *       username: saulrhyz
+ *       password: 081183
+ *     (hashed via scrypt before storage — the plaintext password above is
+ *     never persisted).
+ *   - `getOrCreateSessionSecret()` upserts a random 32-byte secret into
+ *     `AppSecret` the first time it's needed.
  *
  * This file must never be imported into a `"use client"` component — it uses
- * `node:fs` and `node:crypto`, both server-only. Import it only from Route
- * Handlers (app/api/**) and other server-only modules.
+ * `node:crypto` and the Prisma client (which opens real TCP connections to
+ * Postgres), both server-only. Import it only from Route Handlers
+ * (app/api/**) and other server-only modules.
  * -----------------------------------------------------------------------------
  */
 
-import fs from "node:fs";
-import path from "node:path";
 import { randomBytes, scryptSync, timingSafeEqual, createHmac } from "node:crypto";
 import type { NextRequest } from "next/server";
+import { prisma } from "./prisma";
 import type { EnrolledUser, SessionUser, UserRole } from "./types";
 import { SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from "./auth-constants";
-
-const AUTH_FILE = path.join(process.cwd(), ".auth-users.local.json");
 
 const SEED_ADMIN_USERNAME = "saulrhyz";
 const SEED_ADMIN_PASSWORD = "081183";
 
 export { SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS };
 
-interface StoredUser {
-  username: string;
-  passwordHash: string; // "<saltHex>:<hashHex>" (scrypt)
-  role: UserRole;
-  createdAt: string;
-}
-
-interface AuthStore {
-  sessionSecret: string;
-  users: StoredUser[];
-}
-
 // -----------------------------------------------------------------------------
-// Store persistence
+// Password hashing
 // -----------------------------------------------------------------------------
 
 function hashPassword(password: string): string {
@@ -68,47 +60,43 @@ function verifyPasswordHash(password: string, stored: string): boolean {
   return timingSafeEqual(candidate, expected);
 }
 
-function seedStore(): AuthStore {
-  const now = new Date().toISOString();
-  return {
-    sessionSecret: randomBytes(32).toString("hex"),
-    users: [
-      {
+// -----------------------------------------------------------------------------
+// Lazy bootstrap (replaces the old JSON file's "create on first load")
+// -----------------------------------------------------------------------------
+
+function isUniqueConstraintError(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && (err as { code?: string }).code === "P2002";
+}
+
+function isNotFoundError(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && (err as { code?: string }).code === "P2025";
+}
+
+async function getOrCreateSessionSecret(): Promise<string> {
+  const freshlyGenerated = randomBytes(32).toString("hex");
+  const row = await prisma.appSecret.upsert({
+    where: { id: 1 },
+    update: {},
+    create: { id: 1, sessionSecret: freshlyGenerated },
+  });
+  return row.sessionSecret;
+}
+
+async function ensureMasterAdminSeeded(): Promise<void> {
+  const count = await prisma.user.count();
+  if (count > 0) return;
+  try {
+    await prisma.user.create({
+      data: {
         username: SEED_ADMIN_USERNAME,
         passwordHash: hashPassword(SEED_ADMIN_PASSWORD),
         role: "admin",
-        createdAt: now,
       },
-    ],
-  };
-}
-
-function loadStore(): AuthStore {
-  if (!fs.existsSync(AUTH_FILE)) {
-    const fresh = seedStore();
-    saveStore(fresh);
-    return fresh;
+    });
+  } catch (err) {
+    // Race: a concurrent request already seeded it between our count() and create(). Fine.
+    if (!isUniqueConstraintError(err)) throw err;
   }
-  try {
-    const raw = fs.readFileSync(AUTH_FILE, "utf-8");
-    const parsed = JSON.parse(raw) as AuthStore;
-    if (!parsed.sessionSecret || !Array.isArray(parsed.users)) {
-      throw new Error("malformed auth store");
-    }
-    return parsed;
-  } catch {
-    // Corrupt file — re-seed rather than locking everyone out permanently.
-    const fresh = seedStore();
-    saveStore(fresh);
-    return fresh;
-  }
-}
-
-function saveStore(store: AuthStore): void {
-  fs.writeFileSync(AUTH_FILE, JSON.stringify(store, null, 2), {
-    encoding: "utf-8",
-    mode: 0o600,
-  });
 }
 
 // -----------------------------------------------------------------------------
@@ -149,19 +137,19 @@ function verifySessionTokenInternal(token: string, secret: string): SessionPaylo
 }
 
 /** Create a signed session token for a successfully authenticated user. */
-export function createSessionToken(username: string, role: UserRole): string {
-  const store = loadStore();
-  return signSession({ username, role, iat: Math.floor(Date.now() / 1000) }, store.sessionSecret);
+export async function createSessionToken(username: string, role: UserRole): Promise<string> {
+  const secret = await getOrCreateSessionSecret();
+  return signSession({ username, role, iat: Math.floor(Date.now() / 1000) }, secret);
 }
 
 /** Verify a session token (read from the session cookie). Returns null if invalid/expired. */
-export function verifySessionToken(token: string | undefined | null): SessionUser | null {
+export async function verifySessionToken(token: string | undefined | null): Promise<SessionUser | null> {
   if (!token) return null;
-  const store = loadStore();
-  const payload = verifySessionTokenInternal(token, store.sessionSecret);
+  const secret = await getOrCreateSessionSecret();
+  const payload = verifySessionTokenInternal(token, secret);
   if (!payload) return null;
   // Re-check the user still exists (e.g. wasn't removed by an admin after login).
-  const user = store.users.find((u) => u.username === payload.username);
+  const user = await prisma.user.findUnique({ where: { username: payload.username } });
   if (!user) return null;
   return { username: user.username, role: user.role };
 }
@@ -173,19 +161,19 @@ export function verifySessionToken(token: string | undefined | null): SessionUse
 // -----------------------------------------------------------------------------
 
 /** Read + verify the session cookie on an incoming Route Handler request. */
-export function getSessionFromRequest(req: NextRequest): SessionUser | null {
+export async function getSessionFromRequest(req: NextRequest): Promise<SessionUser | null> {
   const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
   return verifySessionToken(token);
 }
 
 /** Require any authenticated user (admin or student). Returns null if unauthenticated. */
-export function requireSession(req: NextRequest): SessionUser | null {
+export async function requireSession(req: NextRequest): Promise<SessionUser | null> {
   return getSessionFromRequest(req);
 }
 
 /** Require an admin. Returns null if unauthenticated OR authenticated as a non-admin. */
-export function requireAdmin(req: NextRequest): SessionUser | null {
-  const user = getSessionFromRequest(req);
+export async function requireAdmin(req: NextRequest): Promise<SessionUser | null> {
+  const user = await getSessionFromRequest(req);
   if (!user || user.role !== "admin") return null;
   return user;
 }
@@ -195,24 +183,24 @@ export function requireAdmin(req: NextRequest): SessionUser | null {
 // -----------------------------------------------------------------------------
 
 /** Verify credentials. Returns the SessionUser on success, or null on failure. */
-export function login(username: string, password: string): SessionUser | null {
-  const store = loadStore();
-  const user = store.users.find((u) => u.username === username);
+export async function login(username: string, password: string): Promise<SessionUser | null> {
+  await ensureMasterAdminSeeded();
+  const user = await prisma.user.findUnique({ where: { username } });
   if (!user) return null;
   if (!verifyPasswordHash(password, user.passwordHash)) return null;
   return { username: user.username, role: user.role };
 }
 
-export function listUsers(): EnrolledUser[] {
-  const store = loadStore();
-  return store.users.map((u) => ({ username: u.username, role: u.role, createdAt: u.createdAt }));
+export async function listUsers(): Promise<EnrolledUser[]> {
+  await ensureMasterAdminSeeded();
+  const users = await prisma.user.findMany({ orderBy: { username: "asc" } });
+  return users.map((u) => ({ username: u.username, role: u.role, createdAt: u.createdAt.toISOString() }));
 }
 
-export function getUser(username: string): EnrolledUser | null {
-  const store = loadStore();
-  const user = store.users.find((u) => u.username === username);
+export async function getUser(username: string): Promise<EnrolledUser | null> {
+  const user = await prisma.user.findUnique({ where: { username } });
   if (!user) return null;
-  return { username: user.username, role: user.role, createdAt: user.createdAt };
+  return { username: user.username, role: user.role, createdAt: user.createdAt.toISOString() };
 }
 
 export interface AddUserResult {
@@ -222,7 +210,7 @@ export interface AddUserResult {
 }
 
 /** Admin-only: enroll a new user. Usernames are unique, case-sensitive. */
-export function addUser(username: string, password: string, role: UserRole = "student"): AddUserResult {
+export async function addUser(username: string, password: string, role: UserRole = "student"): Promise<AddUserResult> {
   const trimmed = username.trim();
   if (trimmed.length < 3) {
     return { success: false, error: "Username must be at least 3 characters." };
@@ -230,14 +218,21 @@ export function addUser(username: string, password: string, role: UserRole = "st
   if (password.length < 4) {
     return { success: false, error: "Password must be at least 4 characters." };
   }
-  const store = loadStore();
-  if (store.users.some((u) => u.username === trimmed)) {
-    return { success: false, error: `User "${trimmed}" already exists.` };
+
+  try {
+    const user = await prisma.user.create({
+      data: { username: trimmed, passwordHash: hashPassword(password), role },
+    });
+    return {
+      success: true,
+      user: { username: user.username, role: user.role, createdAt: user.createdAt.toISOString() },
+    };
+  } catch (err) {
+    if (isUniqueConstraintError(err)) {
+      return { success: false, error: `User "${trimmed}" already exists.` };
+    }
+    throw err;
   }
-  const createdAt = new Date().toISOString();
-  store.users.push({ username: trimmed, passwordHash: hashPassword(password), role, createdAt });
-  saveStore(store);
-  return { success: true, user: { username: trimmed, role, createdAt } };
 }
 
 export interface RemoveUserResult {
@@ -246,18 +241,19 @@ export interface RemoveUserResult {
 }
 
 /** Admin-only: remove an enrolled user. The seed master admin cannot be removed. */
-export function removeUser(username: string): RemoveUserResult {
+export async function removeUser(username: string): Promise<RemoveUserResult> {
   if (username === SEED_ADMIN_USERNAME) {
     return { success: false, error: `"${SEED_ADMIN_USERNAME}" is the master admin account and cannot be removed.` };
   }
-  const store = loadStore();
-  const before = store.users.length;
-  store.users = store.users.filter((u) => u.username !== username);
-  if (store.users.length === before) {
-    return { success: false, error: `User "${username}" not found.` };
+  try {
+    await prisma.user.delete({ where: { username } });
+    return { success: true };
+  } catch (err) {
+    if (isNotFoundError(err)) {
+      return { success: false, error: `User "${username}" not found.` };
+    }
+    throw err;
   }
-  saveStore(store);
-  return { success: true };
 }
 
 export interface ChangePasswordResult {
@@ -266,16 +262,17 @@ export interface ChangePasswordResult {
 }
 
 /** Change a user's password (self-service or admin-driven). */
-export function changePassword(username: string, newPassword: string): ChangePasswordResult {
+export async function changePassword(username: string, newPassword: string): Promise<ChangePasswordResult> {
   if (newPassword.length < 4) {
     return { success: false, error: "Password must be at least 4 characters." };
   }
-  const store = loadStore();
-  const user = store.users.find((u) => u.username === username);
-  if (!user) {
-    return { success: false, error: `User "${username}" not found.` };
+  try {
+    await prisma.user.update({ where: { username }, data: { passwordHash: hashPassword(newPassword) } });
+    return { success: true };
+  } catch (err) {
+    if (isNotFoundError(err)) {
+      return { success: false, error: `User "${username}" not found.` };
+    }
+    throw err;
   }
-  user.passwordHash = hashPassword(newPassword);
-  saveStore(store);
-  return { success: true };
 }

@@ -28,12 +28,12 @@ export async function POST(req: NextRequest): Promise<NextResponse<LoginResponse
   }
 
   try {
-    const user = login(body.username, body.password);
+    const user = await login(body.username, body.password);
     if (!user) {
       return NextResponse.json({ success: false, error: "Invalid username or password." }, { status: 401 });
     }
 
-    const token = createSessionToken(user.username, user.role);
+    const token = await createSessionToken(user.username, user.role);
     const response = NextResponse.json({ success: true, user }, { status: 200 });
     response.cookies.set(SESSION_COOKIE_NAME, token, {
       httpOnly: true,

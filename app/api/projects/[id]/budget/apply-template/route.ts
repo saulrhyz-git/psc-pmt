@@ -24,7 +24,7 @@ interface RouteParams {
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams): Promise<NextResponse<BudgetListResponseBody>> {
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
 
@@ -39,13 +39,13 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<N
     return NextResponse.json({ success: false, error: "templateId is required." }, { status: 400 });
   }
 
-  const template = getBudgetTemplate(body.templateId);
+  const template = await getBudgetTemplate(body.templateId);
   if (!template) {
     return NextResponse.json({ success: false, error: `Template "${body.templateId}" not found.` }, { status: 404 });
   }
 
   for (const lineItem of template.lineItems) {
-    const result = createBudgetLineItem(params.id, {
+    const result = await createBudgetLineItem(params.id, {
       phase: lineItem.phase,
       category: lineItem.category,
       description: lineItem.description,
@@ -60,5 +60,5 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<N
     }
   }
 
-  return NextResponse.json({ success: true, lineItems: listBudgetLineItems(params.id) }, { status: 201 });
+  return NextResponse.json({ success: true, lineItems: await listBudgetLineItems(params.id) }, { status: 201 });
 }

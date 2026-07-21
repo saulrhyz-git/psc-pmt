@@ -26,13 +26,13 @@ import type {
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest): Promise<NextResponse<UsersListResponseBody>> {
-  const admin = requireAdmin(req);
+  const admin = await requireAdmin(req);
   if (!admin) {
     return NextResponse.json({ success: false, error: "Admin access required." }, { status: 403 });
   }
 
   try {
-    const users = listUsers();
+    const users = await listUsers();
     return NextResponse.json({ success: true, users }, { status: 200 });
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<UsersListRespo
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse<UsersListResponseBody>> {
-  const admin = requireAdmin(req);
+  const admin = await requireAdmin(req);
   if (!admin) {
     return NextResponse.json({ success: false, error: "Admin access required." }, { status: 403 });
   }
@@ -58,16 +58,16 @@ export async function POST(req: NextRequest): Promise<NextResponse<UsersListResp
     return NextResponse.json({ success: false, error: "Username and password are required." }, { status: 400 });
   }
 
-  const result = addUser(body.username, body.password, body.role ?? "student");
+  const result = await addUser(body.username, body.password, body.role ?? "student");
   if (!result.success) {
     return NextResponse.json({ success: false, error: result.error }, { status: 400 });
   }
 
-  return NextResponse.json({ success: true, users: listUsers() }, { status: 201 });
+  return NextResponse.json({ success: true, users: await listUsers() }, { status: 201 });
 }
 
 export async function DELETE(req: NextRequest): Promise<NextResponse<UsersListResponseBody>> {
-  const admin = requireAdmin(req);
+  const admin = await requireAdmin(req);
   if (!admin) {
     return NextResponse.json({ success: false, error: "Admin access required." }, { status: 403 });
   }
@@ -83,16 +83,16 @@ export async function DELETE(req: NextRequest): Promise<NextResponse<UsersListRe
     return NextResponse.json({ success: false, error: "Username is required." }, { status: 400 });
   }
 
-  const result = removeUser(body.username);
+  const result = await removeUser(body.username);
   if (!result.success) {
     return NextResponse.json({ success: false, error: result.error }, { status: 400 });
   }
 
-  return NextResponse.json({ success: true, users: listUsers() }, { status: 200 });
+  return NextResponse.json({ success: true, users: await listUsers() }, { status: 200 });
 }
 
 export async function PATCH(req: NextRequest): Promise<NextResponse<UsersListResponseBody>> {
-  const admin = requireAdmin(req);
+  const admin = await requireAdmin(req);
   if (!admin) {
     return NextResponse.json({ success: false, error: "Admin access required." }, { status: 403 });
   }
@@ -108,10 +108,10 @@ export async function PATCH(req: NextRequest): Promise<NextResponse<UsersListRes
     return NextResponse.json({ success: false, error: "Username and newPassword are required." }, { status: 400 });
   }
 
-  const result = changePassword(body.username, body.newPassword);
+  const result = await changePassword(body.username, body.newPassword);
   if (!result.success) {
     return NextResponse.json({ success: false, error: result.error }, { status: 400 });
   }
 
-  return NextResponse.json({ success: true, users: listUsers() }, { status: 200 });
+  return NextResponse.json({ success: true, users: await listUsers() }, { status: 200 });
 }

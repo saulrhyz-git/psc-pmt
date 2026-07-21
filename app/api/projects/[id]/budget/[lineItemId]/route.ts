@@ -18,7 +18,7 @@ interface RouteParams {
 }
 
 export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<NextResponse<BudgetLineItemResponseBody>> {
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
 
@@ -29,7 +29,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
     return NextResponse.json({ success: false, error: "Request body must be valid JSON." }, { status: 400 });
   }
 
-  const result = updateBudgetLineItem(params.id, params.lineItemId, body);
+  const result = await updateBudgetLineItem(params.id, params.lineItemId, body);
   if (!result.success || !result.data) {
     return NextResponse.json({ success: false, error: result.error }, { status: 400 });
   }
@@ -37,11 +37,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
 }
 
 export async function DELETE(req: NextRequest, { params }: RouteParams): Promise<NextResponse<{ success: boolean; error?: string }>> {
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
 
-  const result = deleteBudgetLineItem(params.id, params.lineItemId);
+  const result = await deleteBudgetLineItem(params.id, params.lineItemId);
   if (!result.success) {
     return NextResponse.json({ success: false, error: result.error }, { status: 404 });
   }

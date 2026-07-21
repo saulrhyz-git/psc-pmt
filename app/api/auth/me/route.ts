@@ -15,7 +15,7 @@ import type { MeResponseBody } from "@/lib/types";
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest): Promise<NextResponse<MeResponseBody>> {
-  const user = getSessionFromRequest(req);
+  const user = await getSessionFromRequest(req);
   if (!user) {
     return NextResponse.json({ authenticated: false }, { status: 200 });
   }

@@ -18,14 +18,14 @@ interface RouteParams {
 }
 
 export async function GET(req: NextRequest, { params }: RouteParams): Promise<NextResponse<BudgetListResponseBody>> {
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
-  return NextResponse.json({ success: true, lineItems: listBudgetLineItems(params.id) }, { status: 200 });
+  return NextResponse.json({ success: true, lineItems: await listBudgetLineItems(params.id) }, { status: 200 });
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams): Promise<NextResponse<BudgetLineItemResponseBody>> {
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
 
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<N
     return NextResponse.json({ success: false, error: "Request body must be valid JSON." }, { status: 400 });
   }
 
-  const result = createBudgetLineItem(params.id, body);
+  const result = await createBudgetLineItem(params.id, body);
   if (!result.success || !result.data) {
     return NextResponse.json({ success: false, error: result.error }, { status: 400 });
   }

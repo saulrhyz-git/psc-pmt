@@ -40,8 +40,8 @@ import {
  * the SDK client per call is cheap enough that a stale-key bug isn't worth
  * the trade-off.
  */
-function getClient(): Anthropic {
-  const { value: apiKey } = getClaudeApiKey();
+async function getClient(): Promise<Anthropic> {
+  const { value: apiKey } = await getClaudeApiKey();
   if (!apiKey) {
     throw new VisionExtractionError(
       "No Anthropic API key configured. Add one in the app's Settings panel, or set ANTHROPIC_API_KEY in your environment, before selecting Claude as the analysis provider — or switch to the Gemini provider instead."
@@ -87,11 +87,11 @@ export interface AnalyzePlanImageInput {
  * from the model's raw geometry extraction.
  */
 export async function analyzePlanImage(input: AnalyzePlanImageInput): Promise<PlanAnalysisResult> {
-  const client = getClient();
+  const client = await getClient();
   // getClaudeModel() always resolves to a string (settings → env → built-in
   // default), but its type is string | undefined for symmetry with the API
   // key getters, so we fall back defensively here to keep the SDK call typed.
-  const model = getClaudeModel().value ?? "claude-3-5-sonnet-20241022";
+  const model = (await getClaudeModel()).value ?? "claude-3-5-sonnet-20241022";
 
   let response: Anthropic.Message;
   try {

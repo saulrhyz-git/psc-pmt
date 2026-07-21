@@ -1,22 +1,40 @@
 /**
  * lib/project-store.ts
  * -----------------------------------------------------------------------------
- * Server-only persistence for Tool #2 (Project Management). Same pattern as
- * lib/auth.ts and lib/ai-settings.ts: a single local, gitignored JSON file at
- * the project root (`.projects-data.local.json`), read fresh and written back
- * on every mutation — no database, no caching/singletons, no new npm
- * dependency for storage itself (only `xlsx`/SheetJS is added, for the export
- * route, which is unrelated to persistence).
+ * Server-only persistence for Tool #2 (Project Management).
  *
- * This file uses `node:fs`/`node:crypto` and must never be imported into a
- * `"use client"` component. Import it only from Route Handlers
- * (app/api/projects/**) and other server-only modules.
+ * Storage: Postgres via Prisma (see prisma/schema.prisma's `Project`, `Task`,
+ * `BudgetLineItem`, `CrewMember`, `Equipment` models). This used to be a
+ * single gitignored JSON file (`.projects-data.local.json`) with manual
+ * cascade-delete filtering; cascade deletes are now enforced by the database
+ * itself (`onDelete: Cascade` on every child model's `projectId` foreign
+ * key), so deleting a project is a single `prisma.project.delete()` call.
+ *
+ * Enum note: several app-facing string unions use hyphens (e.g. "on-hold",
+ * "not-started", "in-use") but Prisma enum identifiers can't contain
+ * hyphens, so the schema maps underscored identifiers to hyphenated DB
+ * values (`on_hold @map("on-hold")`) and the *generated TypeScript enum
+ * type* uses the underscored identifier. The TO_DB/FROM_DB lookup tables
+ * below translate between the two at the store boundary so every other
+ * layer of the app (types, routes, UI) is untouched.
+ *
+ * This file uses the Prisma client (real TCP connections to Postgres) and
+ * must never be imported into a `"use client"` component. Import it only
+ * from Route Handlers (app/api/projects/**) and other server-only modules.
  * -----------------------------------------------------------------------------
  */
 
-import fs from "node:fs";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
+import type {
+  BudgetCategory as DbBudgetCategory,
+  CrewStatus as DbCrewStatus,
+  EquipmentStatus as DbEquipmentStatus,
+  Prisma,
+  ProjectStatus as DbProjectStatus,
+  TaskPriority as DbTaskPriority,
+  TaskStatus as DbTaskStatus,
+} from "@prisma/client";
+import { prisma } from "./prisma";
 import type {
   BudgetLineItem,
   CreateBudgetLineItemBody,
@@ -25,10 +43,14 @@ import type {
   CreateProjectBody,
   CreateTaskBody,
   CrewMember,
+  CrewStatus,
   Equipment,
+  EquipmentStatus,
   Project,
   ProjectBundle,
+  ProjectStatus,
   ProjectTask,
+  TaskStatus,
   UpdateBudgetLineItemBody,
   UpdateCrewMemberBody,
   UpdateEquipmentBody,
@@ -36,40 +58,160 @@ import type {
   UpdateTaskBody,
 } from "./project-types";
 
-const DATA_FILE = path.join(process.cwd(), ".projects-data.local.json");
+// -----------------------------------------------------------------------------
+// Enum translation (app hyphenated <-> Prisma underscored identifiers)
+// -----------------------------------------------------------------------------
 
-interface Store {
-  projects: Project[];
-  tasks: ProjectTask[];
-  budgetLineItems: BudgetLineItem[];
-  crew: CrewMember[];
-  equipment: Equipment[];
+const PROJECT_STATUS_TO_DB: Record<ProjectStatus, DbProjectStatus> = {
+  planning: "planning",
+  active: "active",
+  "on-hold": "on_hold",
+  completed: "completed",
+};
+const PROJECT_STATUS_FROM_DB: Record<DbProjectStatus, ProjectStatus> = {
+  planning: "planning",
+  active: "active",
+  on_hold: "on-hold",
+  completed: "completed",
+};
+
+const TASK_STATUS_TO_DB: Record<TaskStatus, DbTaskStatus> = {
+  "not-started": "not_started",
+  "in-progress": "in_progress",
+  blocked: "blocked",
+  completed: "completed",
+};
+const TASK_STATUS_FROM_DB: Record<DbTaskStatus, TaskStatus> = {
+  not_started: "not-started",
+  in_progress: "in-progress",
+  blocked: "blocked",
+  completed: "completed",
+};
+
+const CREW_STATUS_TO_DB: Record<CrewStatus, DbCrewStatus> = {
+  active: "active",
+  "on-leave": "on_leave",
+  "off-project": "off_project",
+};
+const CREW_STATUS_FROM_DB: Record<DbCrewStatus, CrewStatus> = {
+  active: "active",
+  on_leave: "on-leave",
+  off_project: "off-project",
+};
+
+const EQUIPMENT_STATUS_TO_DB: Record<EquipmentStatus, DbEquipmentStatus> = {
+  available: "available",
+  "in-use": "in_use",
+  maintenance: "maintenance",
+  reserved: "reserved",
+};
+const EQUIPMENT_STATUS_FROM_DB: Record<DbEquipmentStatus, EquipmentStatus> = {
+  available: "available",
+  in_use: "in-use",
+  maintenance: "maintenance",
+  reserved: "reserved",
+};
+
+// TaskPriority and BudgetCategory have no hyphens, so the app union and the
+// Prisma-generated union share identical literal values — no translation
+// needed, they're structurally the same type.
+
+// -----------------------------------------------------------------------------
+// Row -> app-type mappers
+// -----------------------------------------------------------------------------
+
+// eslint-disable-next-line @typescript-eslint/ban-types -- `{}` is Prisma's documented idiom for "the plain model payload, no include/select"
+type ProjectRow = Prisma.ProjectGetPayload<{}>;
+// eslint-disable-next-line @typescript-eslint/ban-types
+type TaskRow = Prisma.TaskGetPayload<{}>;
+// eslint-disable-next-line @typescript-eslint/ban-types
+type BudgetLineItemRow = Prisma.BudgetLineItemGetPayload<{}>;
+// eslint-disable-next-line @typescript-eslint/ban-types
+type CrewMemberRow = Prisma.CrewMemberGetPayload<{}>;
+// eslint-disable-next-line @typescript-eslint/ban-types
+type EquipmentRow = Prisma.EquipmentGetPayload<{}>;
+
+function toProject(row: ProjectRow): Project {
+  return {
+    id: row.id,
+    name: row.name,
+    projectInCharge: row.projectInCharge,
+    clientName: row.clientName,
+    dateStarted: row.dateStarted,
+    targetCompletionDate: row.targetCompletionDate ?? undefined,
+    address: row.address ?? undefined,
+    projectType: row.projectType ?? undefined,
+    totalBudget: row.totalBudget.toNumber(),
+    status: PROJECT_STATUS_FROM_DB[row.status],
+    notes: row.notes ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }
 
-const EMPTY_STORE: Store = { projects: [], tasks: [], budgetLineItems: [], crew: [], equipment: [] };
-
-function loadStore(): Store {
-  if (!fs.existsSync(DATA_FILE)) return { ...EMPTY_STORE };
-  try {
-    const raw = fs.readFileSync(DATA_FILE, "utf-8");
-    const parsed = JSON.parse(raw) as Partial<Store>;
-    return {
-      projects: parsed.projects ?? [],
-      tasks: parsed.tasks ?? [],
-      budgetLineItems: parsed.budgetLineItems ?? [],
-      crew: parsed.crew ?? [],
-      equipment: parsed.equipment ?? [],
-    };
-  } catch {
-    // Corrupt file — don't crash the app; start fresh rather than locking
-    // everyone out of the tool (mirrors lib/auth.ts's re-seed-on-corruption behavior).
-    return { ...EMPTY_STORE };
-  }
+function toTask(row: TaskRow): ProjectTask {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    title: row.title,
+    description: row.description ?? undefined,
+    phase: row.phase,
+    status: TASK_STATUS_FROM_DB[row.status],
+    progressPercent: row.progressPercent,
+    assignee: row.assignee ?? undefined,
+    priority: row.priority,
+    startDate: row.startDate,
+    endDate: row.endDate,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }
 
-function saveStore(store: Store): void {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(store, null, 2), { encoding: "utf-8", mode: 0o600 });
+function toBudgetLineItem(row: BudgetLineItemRow): BudgetLineItem {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    phase: row.phase,
+    category: row.category,
+    description: row.description ?? undefined,
+    budgeted: row.budgeted.toNumber(),
+    spent: row.spent.toNumber(),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }
+
+function toCrewMember(row: CrewMemberRow): CrewMember {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    name: row.name,
+    role: row.role,
+    allocationPercent: row.allocationPercent,
+    status: CREW_STATUS_FROM_DB[row.status],
+    notes: row.notes ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toEquipment(row: EquipmentRow): Equipment {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    name: row.name,
+    equipmentType: row.equipmentType,
+    status: EQUIPMENT_STATUS_FROM_DB[row.status],
+    assignedTo: row.assignedTo ?? undefined,
+    notes: row.notes ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Result envelope + error helpers
+// -----------------------------------------------------------------------------
 
 export interface StoreResult<T> {
   success: boolean;
@@ -85,19 +227,29 @@ function fail<T>(error: string): StoreResult<T> {
   return { success: false, error };
 }
 
+function isNotFoundError(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && (err as { code?: string }).code === "P2025";
+}
+
+function clampPercent(n: number): number {
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
 // -----------------------------------------------------------------------------
 // Projects
 // -----------------------------------------------------------------------------
 
-export function listProjects(): Project[] {
-  return loadStore().projects.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+export async function listProjects(): Promise<Project[]> {
+  const rows = await prisma.project.findMany({ orderBy: { createdAt: "desc" } });
+  return rows.map(toProject);
 }
 
-export function getProject(id: string): Project | null {
-  return loadStore().projects.find((p) => p.id === id) ?? null;
+export async function getProject(id: string): Promise<Project | null> {
+  const row = await prisma.project.findUnique({ where: { id } });
+  return row ? toProject(row) : null;
 }
 
-export function createProject(body: CreateProjectBody): StoreResult<Project> {
+export async function createProject(body: CreateProjectBody): Promise<StoreResult<Project>> {
   if (!body.name?.trim()) return fail("Project name is required.");
   if (!body.projectInCharge?.trim()) return fail("Project in charge is required.");
   if (!body.clientName?.trim()) return fail("Client name is required.");
@@ -106,82 +258,84 @@ export function createProject(body: CreateProjectBody): StoreResult<Project> {
     return fail("Total budget must be a non-negative number.");
   }
 
-  const now = new Date().toISOString();
-  const project: Project = {
-    id: randomUUID(),
-    name: body.name.trim(),
-    projectInCharge: body.projectInCharge.trim(),
-    clientName: body.clientName.trim(),
-    dateStarted: body.dateStarted,
-    targetCompletionDate: body.targetCompletionDate,
-    address: body.address?.trim() || undefined,
-    projectType: body.projectType?.trim() || undefined,
-    totalBudget: body.totalBudget,
-    status: body.status ?? "planning",
-    notes: body.notes?.trim() || undefined,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  const store = loadStore();
-  store.projects.push(project);
-  saveStore(store);
-  return ok(project);
+  const row = await prisma.project.create({
+    data: {
+      id: randomUUID(),
+      name: body.name.trim(),
+      projectInCharge: body.projectInCharge.trim(),
+      clientName: body.clientName.trim(),
+      dateStarted: body.dateStarted,
+      targetCompletionDate: body.targetCompletionDate,
+      address: body.address?.trim() || undefined,
+      projectType: body.projectType?.trim() || undefined,
+      totalBudget: body.totalBudget,
+      status: PROJECT_STATUS_TO_DB[body.status ?? "planning"],
+      notes: body.notes?.trim() || undefined,
+    },
+  });
+  return ok(toProject(row));
 }
 
-export function updateProject(id: string, body: UpdateProjectBody): StoreResult<Project> {
-  const store = loadStore();
-  const project = store.projects.find((p) => p.id === id);
-  if (!project) return fail(`Project "${id}" not found.`);
+export async function updateProject(id: string, body: UpdateProjectBody): Promise<StoreResult<Project>> {
+  const existing = await prisma.project.findUnique({ where: { id } });
+  if (!existing) return fail(`Project "${id}" not found.`);
 
   if (body.totalBudget !== undefined && (typeof body.totalBudget !== "number" || body.totalBudget < 0)) {
     return fail("Total budget must be a non-negative number.");
   }
 
-  Object.assign(project, {
-    ...(body.name !== undefined && { name: body.name.trim() }),
-    ...(body.projectInCharge !== undefined && { projectInCharge: body.projectInCharge.trim() }),
-    ...(body.clientName !== undefined && { clientName: body.clientName.trim() }),
-    ...(body.dateStarted !== undefined && { dateStarted: body.dateStarted }),
-    ...(body.targetCompletionDate !== undefined && { targetCompletionDate: body.targetCompletionDate }),
-    ...(body.address !== undefined && { address: body.address.trim() || undefined }),
-    ...(body.projectType !== undefined && { projectType: body.projectType.trim() || undefined }),
-    ...(body.totalBudget !== undefined && { totalBudget: body.totalBudget }),
-    ...(body.status !== undefined && { status: body.status }),
-    ...(body.notes !== undefined && { notes: body.notes.trim() || undefined }),
-    updatedAt: new Date().toISOString(),
+  try {
+    const row = await prisma.project.update({
+      where: { id },
+      data: {
+        ...(body.name !== undefined && { name: body.name.trim() }),
+        ...(body.projectInCharge !== undefined && { projectInCharge: body.projectInCharge.trim() }),
+        ...(body.clientName !== undefined && { clientName: body.clientName.trim() }),
+        ...(body.dateStarted !== undefined && { dateStarted: body.dateStarted }),
+        ...(body.targetCompletionDate !== undefined && { targetCompletionDate: body.targetCompletionDate }),
+        ...(body.address !== undefined && { address: body.address.trim() || null }),
+        ...(body.projectType !== undefined && { projectType: body.projectType.trim() || null }),
+        ...(body.totalBudget !== undefined && { totalBudget: body.totalBudget }),
+        ...(body.status !== undefined && { status: PROJECT_STATUS_TO_DB[body.status] }),
+        ...(body.notes !== undefined && { notes: body.notes.trim() || null }),
+      },
+    });
+    return ok(toProject(row));
+  } catch (err) {
+    if (isNotFoundError(err)) return fail(`Project "${id}" not found.`);
+    throw err;
+  }
+}
+
+export async function deleteProject(id: string): Promise<StoreResult<true>> {
+  try {
+    // Children (tasks, budget line items, crew, equipment) cascade-delete
+    // automatically via each model's `onDelete: Cascade` foreign key.
+    await prisma.project.delete({ where: { id } });
+    return ok(true);
+  } catch (err) {
+    if (isNotFoundError(err)) return fail(`Project "${id}" not found.`);
+    throw err;
+  }
+}
+
+export async function getProjectBundle(id: string): Promise<ProjectBundle | null> {
+  const row = await prisma.project.findUnique({
+    where: { id },
+    include: {
+      tasks: { orderBy: { startDate: "asc" } },
+      budgetItems: { orderBy: { createdAt: "asc" } },
+      crew: { orderBy: { createdAt: "asc" } },
+      equipment: { orderBy: { createdAt: "asc" } },
+    },
   });
-
-  saveStore(store);
-  return ok(project);
-}
-
-export function deleteProject(id: string): StoreResult<true> {
-  const store = loadStore();
-  const before = store.projects.length;
-  store.projects = store.projects.filter((p) => p.id !== id);
-  if (store.projects.length === before) return fail(`Project "${id}" not found.`);
-
-  // Cascade delete everything scoped to this project.
-  store.tasks = store.tasks.filter((t) => t.projectId !== id);
-  store.budgetLineItems = store.budgetLineItems.filter((b) => b.projectId !== id);
-  store.crew = store.crew.filter((c) => c.projectId !== id);
-  store.equipment = store.equipment.filter((e) => e.projectId !== id);
-
-  saveStore(store);
-  return ok(true);
-}
-
-export function getProjectBundle(id: string): ProjectBundle | null {
-  const store = loadStore();
-  const project = store.projects.find((p) => p.id === id);
-  if (!project) return null;
+  if (!row) return null;
   return {
-    project,
-    tasks: store.tasks.filter((t) => t.projectId === id),
-    budgetLineItems: store.budgetLineItems.filter((b) => b.projectId === id),
-    crew: store.crew.filter((c) => c.projectId === id),
-    equipment: store.equipment.filter((e) => e.projectId === id),
+    project: toProject(row),
+    tasks: row.tasks.map(toTask),
+    budgetLineItems: row.budgetItems.map(toBudgetLineItem),
+    crew: row.crew.map(toCrewMember),
+    equipment: row.equipment.map(toEquipment),
   };
 }
 
@@ -189,122 +343,119 @@ export function getProjectBundle(id: string): ProjectBundle | null {
 // Tasks
 // -----------------------------------------------------------------------------
 
-export function listTasks(projectId: string): ProjectTask[] {
-  return loadStore()
-    .tasks.filter((t) => t.projectId === projectId)
-    .sort((a, b) => a.startDate.localeCompare(b.startDate));
+export async function listTasks(projectId: string): Promise<ProjectTask[]> {
+  const rows = await prisma.task.findMany({ where: { projectId }, orderBy: { startDate: "asc" } });
+  return rows.map(toTask);
 }
 
-export function createTask(projectId: string, body: CreateTaskBody): StoreResult<ProjectTask> {
-  const store = loadStore();
-  if (!store.projects.some((p) => p.id === projectId)) return fail(`Project "${projectId}" not found.`);
+export async function createTask(projectId: string, body: CreateTaskBody): Promise<StoreResult<ProjectTask>> {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) return fail(`Project "${projectId}" not found.`);
   if (!body.title?.trim()) return fail("Task title is required.");
   if (!body.phase?.trim()) return fail("Phase is required.");
   if (!body.startDate || !body.endDate) return fail("Start and end dates are required.");
   if (body.startDate > body.endDate) return fail("Start date must be on or before the end date.");
 
-  const now = new Date().toISOString();
-  const task: ProjectTask = {
-    id: randomUUID(),
-    projectId,
-    title: body.title.trim(),
-    description: body.description?.trim() || undefined,
-    phase: body.phase.trim(),
-    status: body.status ?? "not-started",
-    progressPercent: clampPercent(body.progressPercent ?? 0),
-    assignee: body.assignee?.trim() || undefined,
-    priority: body.priority ?? "medium",
-    startDate: body.startDate,
-    endDate: body.endDate,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  store.tasks.push(task);
-  saveStore(store);
-  return ok(task);
+  const row = await prisma.task.create({
+    data: {
+      id: randomUUID(),
+      projectId,
+      title: body.title.trim(),
+      description: body.description?.trim() || undefined,
+      phase: body.phase.trim(),
+      status: TASK_STATUS_TO_DB[body.status ?? "not-started"],
+      progressPercent: clampPercent(body.progressPercent ?? 0),
+      assignee: body.assignee?.trim() || undefined,
+      priority: body.priority ?? "medium",
+      startDate: body.startDate,
+      endDate: body.endDate,
+    },
+  });
+  return ok(toTask(row));
 }
 
-export function updateTask(projectId: string, taskId: string, body: UpdateTaskBody): StoreResult<ProjectTask> {
-  const store = loadStore();
-  const task = store.tasks.find((t) => t.id === taskId && t.projectId === projectId);
-  if (!task) return fail(`Task "${taskId}" not found.`);
+export async function updateTask(projectId: string, taskId: string, body: UpdateTaskBody): Promise<StoreResult<ProjectTask>> {
+  const existing = await prisma.task.findUnique({ where: { id: taskId } });
+  if (!existing || existing.projectId !== projectId) return fail(`Task "${taskId}" not found.`);
 
-  const nextStart = body.startDate ?? task.startDate;
-  const nextEnd = body.endDate ?? task.endDate;
+  const nextStart = body.startDate ?? existing.startDate;
+  const nextEnd = body.endDate ?? existing.endDate;
   if (nextStart > nextEnd) return fail("Start date must be on or before the end date.");
 
-  Object.assign(task, {
-    ...(body.title !== undefined && { title: body.title.trim() }),
-    ...(body.description !== undefined && { description: body.description.trim() || undefined }),
-    ...(body.phase !== undefined && { phase: body.phase.trim() }),
-    ...(body.status !== undefined && { status: body.status }),
-    ...(body.progressPercent !== undefined && { progressPercent: clampPercent(body.progressPercent) }),
-    ...(body.assignee !== undefined && { assignee: body.assignee.trim() || undefined }),
-    ...(body.priority !== undefined && { priority: body.priority }),
-    ...(body.startDate !== undefined && { startDate: body.startDate }),
-    ...(body.endDate !== undefined && { endDate: body.endDate }),
-    updatedAt: new Date().toISOString(),
-  });
-
-  saveStore(store);
-  return ok(task);
+  try {
+    const row = await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        ...(body.title !== undefined && { title: body.title.trim() }),
+        ...(body.description !== undefined && { description: body.description.trim() || null }),
+        ...(body.phase !== undefined && { phase: body.phase.trim() }),
+        ...(body.status !== undefined && { status: TASK_STATUS_TO_DB[body.status] }),
+        ...(body.progressPercent !== undefined && { progressPercent: clampPercent(body.progressPercent) }),
+        ...(body.assignee !== undefined && { assignee: body.assignee.trim() || null }),
+        ...(body.priority !== undefined && { priority: body.priority }),
+        ...(body.startDate !== undefined && { startDate: body.startDate }),
+        ...(body.endDate !== undefined && { endDate: body.endDate }),
+      },
+    });
+    return ok(toTask(row));
+  } catch (err) {
+    if (isNotFoundError(err)) return fail(`Task "${taskId}" not found.`);
+    throw err;
+  }
 }
 
-export function deleteTask(projectId: string, taskId: string): StoreResult<true> {
-  const store = loadStore();
-  const before = store.tasks.length;
-  store.tasks = store.tasks.filter((t) => !(t.id === taskId && t.projectId === projectId));
-  if (store.tasks.length === before) return fail(`Task "${taskId}" not found.`);
-  saveStore(store);
-  return ok(true);
-}
-
-function clampPercent(n: number): number {
-  return Math.max(0, Math.min(100, Math.round(n)));
+export async function deleteTask(projectId: string, taskId: string): Promise<StoreResult<true>> {
+  const existing = await prisma.task.findUnique({ where: { id: taskId }, select: { projectId: true } });
+  if (!existing || existing.projectId !== projectId) return fail(`Task "${taskId}" not found.`);
+  try {
+    await prisma.task.delete({ where: { id: taskId } });
+    return ok(true);
+  } catch (err) {
+    if (isNotFoundError(err)) return fail(`Task "${taskId}" not found.`);
+    throw err;
+  }
 }
 
 // -----------------------------------------------------------------------------
 // Budget
 // -----------------------------------------------------------------------------
 
-export function listBudgetLineItems(projectId: string): BudgetLineItem[] {
-  return loadStore().budgetLineItems.filter((b) => b.projectId === projectId);
+export async function listBudgetLineItems(projectId: string): Promise<BudgetLineItem[]> {
+  const rows = await prisma.budgetLineItem.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } });
+  return rows.map(toBudgetLineItem);
 }
 
-export function createBudgetLineItem(projectId: string, body: CreateBudgetLineItemBody): StoreResult<BudgetLineItem> {
-  const store = loadStore();
-  if (!store.projects.some((p) => p.id === projectId)) return fail(`Project "${projectId}" not found.`);
+export async function createBudgetLineItem(
+  projectId: string,
+  body: CreateBudgetLineItemBody
+): Promise<StoreResult<BudgetLineItem>> {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) return fail(`Project "${projectId}" not found.`);
   if (!body.phase?.trim()) return fail("Phase is required.");
   if (!body.category) return fail("Category is required.");
   if (typeof body.budgeted !== "number" || body.budgeted < 0) return fail("Budgeted amount must be a non-negative number.");
 
-  const now = new Date().toISOString();
-  const lineItem: BudgetLineItem = {
-    id: randomUUID(),
-    projectId,
-    phase: body.phase.trim(),
-    category: body.category,
-    description: body.description?.trim() || undefined,
-    budgeted: body.budgeted,
-    spent: body.spent ?? 0,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  store.budgetLineItems.push(lineItem);
-  saveStore(store);
-  return ok(lineItem);
+  const row = await prisma.budgetLineItem.create({
+    data: {
+      id: randomUUID(),
+      projectId,
+      phase: body.phase.trim(),
+      category: body.category as DbBudgetCategory,
+      description: body.description?.trim() || undefined,
+      budgeted: body.budgeted,
+      spent: body.spent ?? 0,
+    },
+  });
+  return ok(toBudgetLineItem(row));
 }
 
-export function updateBudgetLineItem(
+export async function updateBudgetLineItem(
   projectId: string,
   lineItemId: string,
   body: UpdateBudgetLineItemBody
-): StoreResult<BudgetLineItem> {
-  const store = loadStore();
-  const lineItem = store.budgetLineItems.find((b) => b.id === lineItemId && b.projectId === projectId);
-  if (!lineItem) return fail(`Budget line item "${lineItemId}" not found.`);
+): Promise<StoreResult<BudgetLineItem>> {
+  const existing = await prisma.budgetLineItem.findUnique({ where: { id: lineItemId }, select: { projectId: true } });
+  if (!existing || existing.projectId !== projectId) return fail(`Budget line item "${lineItemId}" not found.`);
 
   if (body.budgeted !== undefined && (typeof body.budgeted !== "number" || body.budgeted < 0)) {
     return fail("Budgeted amount must be a non-negative number.");
@@ -313,142 +464,166 @@ export function updateBudgetLineItem(
     return fail("Spent amount must be a non-negative number.");
   }
 
-  Object.assign(lineItem, {
-    ...(body.phase !== undefined && { phase: body.phase.trim() }),
-    ...(body.category !== undefined && { category: body.category }),
-    ...(body.description !== undefined && { description: body.description.trim() || undefined }),
-    ...(body.budgeted !== undefined && { budgeted: body.budgeted }),
-    ...(body.spent !== undefined && { spent: body.spent }),
-    updatedAt: new Date().toISOString(),
-  });
-
-  saveStore(store);
-  return ok(lineItem);
+  try {
+    const row = await prisma.budgetLineItem.update({
+      where: { id: lineItemId },
+      data: {
+        ...(body.phase !== undefined && { phase: body.phase.trim() }),
+        ...(body.category !== undefined && { category: body.category as DbBudgetCategory }),
+        ...(body.description !== undefined && { description: body.description.trim() || null }),
+        ...(body.budgeted !== undefined && { budgeted: body.budgeted }),
+        ...(body.spent !== undefined && { spent: body.spent }),
+      },
+    });
+    return ok(toBudgetLineItem(row));
+  } catch (err) {
+    if (isNotFoundError(err)) return fail(`Budget line item "${lineItemId}" not found.`);
+    throw err;
+  }
 }
 
-export function deleteBudgetLineItem(projectId: string, lineItemId: string): StoreResult<true> {
-  const store = loadStore();
-  const before = store.budgetLineItems.length;
-  store.budgetLineItems = store.budgetLineItems.filter((b) => !(b.id === lineItemId && b.projectId === projectId));
-  if (store.budgetLineItems.length === before) return fail(`Budget line item "${lineItemId}" not found.`);
-  saveStore(store);
-  return ok(true);
+export async function deleteBudgetLineItem(projectId: string, lineItemId: string): Promise<StoreResult<true>> {
+  const existing = await prisma.budgetLineItem.findUnique({ where: { id: lineItemId }, select: { projectId: true } });
+  if (!existing || existing.projectId !== projectId) return fail(`Budget line item "${lineItemId}" not found.`);
+  try {
+    await prisma.budgetLineItem.delete({ where: { id: lineItemId } });
+    return ok(true);
+  } catch (err) {
+    if (isNotFoundError(err)) return fail(`Budget line item "${lineItemId}" not found.`);
+    throw err;
+  }
 }
 
 // -----------------------------------------------------------------------------
 // Crew
 // -----------------------------------------------------------------------------
 
-export function listCrew(projectId: string): CrewMember[] {
-  return loadStore().crew.filter((c) => c.projectId === projectId);
+export async function listCrew(projectId: string): Promise<CrewMember[]> {
+  const rows = await prisma.crewMember.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } });
+  return rows.map(toCrewMember);
 }
 
-export function createCrewMember(projectId: string, body: CreateCrewMemberBody): StoreResult<CrewMember> {
-  const store = loadStore();
-  if (!store.projects.some((p) => p.id === projectId)) return fail(`Project "${projectId}" not found.`);
+export async function createCrewMember(projectId: string, body: CreateCrewMemberBody): Promise<StoreResult<CrewMember>> {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) return fail(`Project "${projectId}" not found.`);
   if (!body.name?.trim()) return fail("Crew member name is required.");
   if (!body.role?.trim()) return fail("Role is required.");
 
-  const now = new Date().toISOString();
-  const member: CrewMember = {
-    id: randomUUID(),
-    projectId,
-    name: body.name.trim(),
-    role: body.role.trim(),
-    allocationPercent: clampPercent(body.allocationPercent ?? 100),
-    status: body.status ?? "active",
-    notes: body.notes?.trim() || undefined,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  store.crew.push(member);
-  saveStore(store);
-  return ok(member);
-}
-
-export function updateCrewMember(projectId: string, memberId: string, body: UpdateCrewMemberBody): StoreResult<CrewMember> {
-  const store = loadStore();
-  const member = store.crew.find((c) => c.id === memberId && c.projectId === projectId);
-  if (!member) return fail(`Crew member "${memberId}" not found.`);
-
-  Object.assign(member, {
-    ...(body.name !== undefined && { name: body.name.trim() }),
-    ...(body.role !== undefined && { role: body.role.trim() }),
-    ...(body.allocationPercent !== undefined && { allocationPercent: clampPercent(body.allocationPercent) }),
-    ...(body.status !== undefined && { status: body.status }),
-    ...(body.notes !== undefined && { notes: body.notes.trim() || undefined }),
-    updatedAt: new Date().toISOString(),
+  const row = await prisma.crewMember.create({
+    data: {
+      id: randomUUID(),
+      projectId,
+      name: body.name.trim(),
+      role: body.role.trim(),
+      allocationPercent: clampPercent(body.allocationPercent ?? 100),
+      status: CREW_STATUS_TO_DB[body.status ?? "active"],
+      notes: body.notes?.trim() || undefined,
+    },
   });
-
-  saveStore(store);
-  return ok(member);
+  return ok(toCrewMember(row));
 }
 
-export function deleteCrewMember(projectId: string, memberId: string): StoreResult<true> {
-  const store = loadStore();
-  const before = store.crew.length;
-  store.crew = store.crew.filter((c) => !(c.id === memberId && c.projectId === projectId));
-  if (store.crew.length === before) return fail(`Crew member "${memberId}" not found.`);
-  saveStore(store);
-  return ok(true);
+export async function updateCrewMember(
+  projectId: string,
+  memberId: string,
+  body: UpdateCrewMemberBody
+): Promise<StoreResult<CrewMember>> {
+  const existing = await prisma.crewMember.findUnique({ where: { id: memberId }, select: { projectId: true } });
+  if (!existing || existing.projectId !== projectId) return fail(`Crew member "${memberId}" not found.`);
+
+  try {
+    const row = await prisma.crewMember.update({
+      where: { id: memberId },
+      data: {
+        ...(body.name !== undefined && { name: body.name.trim() }),
+        ...(body.role !== undefined && { role: body.role.trim() }),
+        ...(body.allocationPercent !== undefined && { allocationPercent: clampPercent(body.allocationPercent) }),
+        ...(body.status !== undefined && { status: CREW_STATUS_TO_DB[body.status] }),
+        ...(body.notes !== undefined && { notes: body.notes.trim() || null }),
+      },
+    });
+    return ok(toCrewMember(row));
+  } catch (err) {
+    if (isNotFoundError(err)) return fail(`Crew member "${memberId}" not found.`);
+    throw err;
+  }
+}
+
+export async function deleteCrewMember(projectId: string, memberId: string): Promise<StoreResult<true>> {
+  const existing = await prisma.crewMember.findUnique({ where: { id: memberId }, select: { projectId: true } });
+  if (!existing || existing.projectId !== projectId) return fail(`Crew member "${memberId}" not found.`);
+  try {
+    await prisma.crewMember.delete({ where: { id: memberId } });
+    return ok(true);
+  } catch (err) {
+    if (isNotFoundError(err)) return fail(`Crew member "${memberId}" not found.`);
+    throw err;
+  }
 }
 
 // -----------------------------------------------------------------------------
 // Equipment
 // -----------------------------------------------------------------------------
 
-export function listEquipment(projectId: string): Equipment[] {
-  return loadStore().equipment.filter((e) => e.projectId === projectId);
+export async function listEquipment(projectId: string): Promise<Equipment[]> {
+  const rows = await prisma.equipment.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } });
+  return rows.map(toEquipment);
 }
 
-export function createEquipment(projectId: string, body: CreateEquipmentBody): StoreResult<Equipment> {
-  const store = loadStore();
-  if (!store.projects.some((p) => p.id === projectId)) return fail(`Project "${projectId}" not found.`);
+export async function createEquipment(projectId: string, body: CreateEquipmentBody): Promise<StoreResult<Equipment>> {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) return fail(`Project "${projectId}" not found.`);
   if (!body.name?.trim()) return fail("Equipment name is required.");
   if (!body.equipmentType?.trim()) return fail("Equipment type is required.");
 
-  const now = new Date().toISOString();
-  const item: Equipment = {
-    id: randomUUID(),
-    projectId,
-    name: body.name.trim(),
-    equipmentType: body.equipmentType.trim(),
-    status: body.status ?? "available",
-    assignedTo: body.assignedTo?.trim() || undefined,
-    notes: body.notes?.trim() || undefined,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  store.equipment.push(item);
-  saveStore(store);
-  return ok(item);
-}
-
-export function updateEquipment(projectId: string, itemId: string, body: UpdateEquipmentBody): StoreResult<Equipment> {
-  const store = loadStore();
-  const item = store.equipment.find((e) => e.id === itemId && e.projectId === projectId);
-  if (!item) return fail(`Equipment "${itemId}" not found.`);
-
-  Object.assign(item, {
-    ...(body.name !== undefined && { name: body.name.trim() }),
-    ...(body.equipmentType !== undefined && { equipmentType: body.equipmentType.trim() }),
-    ...(body.status !== undefined && { status: body.status }),
-    ...(body.assignedTo !== undefined && { assignedTo: body.assignedTo.trim() || undefined }),
-    ...(body.notes !== undefined && { notes: body.notes.trim() || undefined }),
-    updatedAt: new Date().toISOString(),
+  const row = await prisma.equipment.create({
+    data: {
+      id: randomUUID(),
+      projectId,
+      name: body.name.trim(),
+      equipmentType: body.equipmentType.trim(),
+      status: EQUIPMENT_STATUS_TO_DB[body.status ?? "available"],
+      assignedTo: body.assignedTo?.trim() || undefined,
+      notes: body.notes?.trim() || undefined,
+    },
   });
-
-  saveStore(store);
-  return ok(item);
+  return ok(toEquipment(row));
 }
 
-export function deleteEquipment(projectId: string, itemId: string): StoreResult<true> {
-  const store = loadStore();
-  const before = store.equipment.length;
-  store.equipment = store.equipment.filter((e) => !(e.id === itemId && e.projectId === projectId));
-  if (store.equipment.length === before) return fail(`Equipment "${itemId}" not found.`);
-  saveStore(store);
-  return ok(true);
+export async function updateEquipment(
+  projectId: string,
+  itemId: string,
+  body: UpdateEquipmentBody
+): Promise<StoreResult<Equipment>> {
+  const existing = await prisma.equipment.findUnique({ where: { id: itemId }, select: { projectId: true } });
+  if (!existing || existing.projectId !== projectId) return fail(`Equipment "${itemId}" not found.`);
+
+  try {
+    const row = await prisma.equipment.update({
+      where: { id: itemId },
+      data: {
+        ...(body.name !== undefined && { name: body.name.trim() }),
+        ...(body.equipmentType !== undefined && { equipmentType: body.equipmentType.trim() }),
+        ...(body.status !== undefined && { status: EQUIPMENT_STATUS_TO_DB[body.status] }),
+        ...(body.assignedTo !== undefined && { assignedTo: body.assignedTo.trim() || null }),
+        ...(body.notes !== undefined && { notes: body.notes.trim() || null }),
+      },
+    });
+    return ok(toEquipment(row));
+  } catch (err) {
+    if (isNotFoundError(err)) return fail(`Equipment "${itemId}" not found.`);
+    throw err;
+  }
+}
+
+export async function deleteEquipment(projectId: string, itemId: string): Promise<StoreResult<true>> {
+  const existing = await prisma.equipment.findUnique({ where: { id: itemId }, select: { projectId: true } });
+  if (!existing || existing.projectId !== projectId) return fail(`Equipment "${itemId}" not found.`);
+  try {
+    await prisma.equipment.delete({ where: { id: itemId } });
+    return ok(true);
+  } catch (err) {
+    if (isNotFoundError(err)) return fail(`Equipment "${itemId}" not found.`);
+    throw err;
+  }
 }

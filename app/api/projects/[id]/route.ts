@@ -20,11 +20,11 @@ interface RouteParams {
 }
 
 export async function GET(req: NextRequest, { params }: RouteParams): Promise<NextResponse<ProjectResponseBody>> {
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
 
-  const project = getProject(params.id);
+  const project = await getProject(params.id);
   if (!project) {
     return NextResponse.json({ success: false, error: `Project "${params.id}" not found.` }, { status: 404 });
   }
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest, { params }: RouteParams): Promise<Ne
 }
 
 export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<NextResponse<ProjectResponseBody>> {
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
 
@@ -43,7 +43,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
     return NextResponse.json({ success: false, error: "Request body must be valid JSON." }, { status: 400 });
   }
 
-  const result = updateProject(params.id, body);
+  const result = await updateProject(params.id, body);
   if (!result.success || !result.data) {
     return NextResponse.json({ success: false, error: result.error }, { status: 400 });
   }
@@ -51,11 +51,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
 }
 
 export async function DELETE(req: NextRequest, { params }: RouteParams): Promise<NextResponse<{ success: boolean; error?: string }>> {
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
 
-  const result = deleteProject(params.id);
+  const result = await deleteProject(params.id);
   if (!result.success) {
     return NextResponse.json({ success: false, error: result.error }, { status: 404 });
   }

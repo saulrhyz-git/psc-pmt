@@ -17,14 +17,14 @@ import type { BudgetTemplateResponseBody, BudgetTemplatesListResponseBody, Creat
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest): Promise<NextResponse<BudgetTemplatesListResponseBody>> {
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
-  return NextResponse.json({ success: true, templates: listBudgetTemplates() }, { status: 200 });
+  return NextResponse.json({ success: true, templates: await listBudgetTemplates() }, { status: 200 });
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse<BudgetTemplateResponseBody>> {
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
 
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<BudgetTemplat
     return NextResponse.json({ success: false, error: "Request body must be valid JSON." }, { status: 400 });
   }
 
-  const result = createBudgetTemplate(body);
+  const result = await createBudgetTemplate(body);
   if (!result.success || !result.data) {
     return NextResponse.json({ success: false, error: result.error }, { status: 400 });
   }

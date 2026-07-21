@@ -18,14 +18,14 @@ interface RouteParams {
 }
 
 export async function GET(req: NextRequest, { params }: RouteParams): Promise<NextResponse<EquipmentListResponseBody>> {
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
-  return NextResponse.json({ success: true, equipment: listEquipment(params.id) }, { status: 200 });
+  return NextResponse.json({ success: true, equipment: await listEquipment(params.id) }, { status: 200 });
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams): Promise<NextResponse<EquipmentResponseBody>> {
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
 
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<N
     return NextResponse.json({ success: false, error: "Request body must be valid JSON." }, { status: 400 });
   }
 
-  const result = createEquipment(params.id, body);
+  const result = await createEquipment(params.id, body);
   if (!result.success || !result.data) {
     return NextResponse.json({ success: false, error: result.error }, { status: 400 });
   }

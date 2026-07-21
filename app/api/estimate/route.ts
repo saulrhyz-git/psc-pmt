@@ -27,7 +27,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<EstimateRespo
   // middleware.ts already blocks requests with no session cookie at all, but
   // it can't verify the cookie's signature (no fs access on the Edge
   // runtime) — this is the real authorization check.
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
 

@@ -66,9 +66,10 @@ for the implementation.
   before it's ever written to disk — it's not stored in plaintext anywhere,
   and isn't in this README's git history either (this file only documents
   where to change it, not the live value going forward).
-- Credentials and a random session-signing secret live in a local, gitignored
-  file, `.auth-users.local.json` (created on first run — see `.gitignore`).
-  Delete it to reset everything back to just the seeded master admin.
+- Credentials and a random session-signing secret live in Postgres (the
+  `users` and `app_secret` tables — see `prisma/schema.prisma` and "Database
+  (Postgres)" below). Truncate those tables (or drop and re-migrate the
+  database) to reset everything back to just the seeded master admin.
 - **Enrolling students**: sign in as the master admin, open **Settings → Users**,
   and add a username/password per student (role "student"). Students can't
   see or change AI provider settings or manage other users — that's
@@ -83,10 +84,38 @@ for the implementation.
   (`requireSession`/`requireAdmin` in `lib/auth.ts`), since Edge middleware
   has no filesystem access to read the auth store.
 
+## Database (Postgres)
+
+Every stateful feature (auth, AI settings, projects, templates) is backed by
+Postgres via [Prisma](https://www.prisma.io/) — see `prisma/schema.prisma`
+for the full schema and `lib/prisma.ts` for the shared client singleton.
+
+1. Have a Postgres server reachable from this machine (local install, Docker,
+   or a hosted instance).
+2. `cp .env.example .env.local` and set `DATABASE_URL` to your connection
+   string, e.g.:
+   ```
+   DATABASE_URL="postgresql://username:password@localhost:5432/construction_multitool"
+   ```
+3. Run the migrations once to create all tables:
+   ```bash
+   npm run db:migrate
+   ```
+   (`npm run db:deploy` applies existing migrations without prompting —
+   use that in CI/production instead of `db:migrate`.)
+4. `npm run db:studio` opens Prisma Studio, a GUI for browsing/editing rows
+   directly, if you want to inspect the data.
+
+The master admin account (`saulrhyz` / `081183`) is seeded automatically into
+the `users` table the first time the app talks to an empty database — no
+manual seeding step required.
+
 ## Setup
 
 ```bash
 npm install
+# set DATABASE_URL in .env.local and run `npm run db:migrate` — see
+# "Database (Postgres)" above — before starting the dev server
 npm run dev
 ```
 
@@ -96,13 +125,12 @@ then configure API keys two ways:
 1. **In-app (recommended for students)** — open the **Settings & Templates**
    tab in the sidebar (or "Configure API keys & models" under the provider
    picker on the Plan Analyzer tab), paste a Gemini and/or Claude key under
-   its **Settings** sub-tab, and save. This writes to a local, gitignored file
-   (`.ai-settings.local.json`) and takes effect immediately on your next
-   analysis — no restart, no editing config files by hand.
-2. **Environment variables** — `cp .env.example .env.local` and set
-   `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` there. Useful for deployed
-   environments where the filesystem is read-only (in-app settings need a
-   writable project directory).
+   its **Settings** sub-tab, and save. This writes to the `ai_settings` table
+   in Postgres and takes effect immediately on your next analysis — no
+   restart, no editing config files by hand.
+2. **Environment variables** — set `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` in
+   `.env.local`. Useful as a fallback, or for deployed environments where you'd
+   rather not put provider keys in the database.
 
 If both are set, the in-app settings win. Model overrides
 (`GEMINI_VISION_MODEL` / `CLAUDE_VISION_MODEL`) work the same way and can also
@@ -163,10 +191,11 @@ for now — it's a shared working tool, not a security boundary. Role-based
 restrictions (e.g. view-only for students) are a planned future enhancement
 — see the header comment in `lib/project-types.ts`.
 
-**Storage**: same pattern as AI settings and auth — a single local, gitignored
-JSON file (`.projects-data.local.json`, see `lib/project-store.ts`), read
-fresh and written back on every mutation. No database. Deleting the file
-resets Project Management back to empty (Tool #1 and login are unaffected).
+**Storage**: Postgres, same as every other stateful feature — the `projects`,
+`tasks`, `budget_line_items`, `crew_members`, and `equipment` tables (see
+`prisma/schema.prisma` and `lib/project-store.ts`). Deleting a project cascades
+to its tasks/budget/crew/equipment automatically via foreign-key
+`onDelete: Cascade` — no manual cleanup code needed.
 
 ## Settings & Templates
 
@@ -177,9 +206,9 @@ A sidebar tab with two sub-tabs:
   apply it to any project's Budget tab in one click — new line items are
   added with `spent` starting at ₱0, additively (applying twice, or applying
   on top of manually-added items, never overwrites existing line items).
-  Stored in a local, gitignored file (`.budget-templates.local.json`, see
-  `lib/template-store.ts`). More template types (e.g. Task templates) can be
-  added later following the same pattern.
+  Stored in Postgres (the `budget_templates` / `budget_template_line_items`
+  tables, see `lib/template-store.ts`). More template types (e.g. Task
+  templates) can be added later following the same pattern.
 - **Settings** — admin-only: AI provider API keys/models (`AiProviderSettings.tsx`,
   formerly a gear-icon modal, now embedded here) and user management
   (`UserManagement.tsx`). Students see an "admin access required" placeholder
@@ -188,6 +217,8 @@ A sidebar tab with two sub-tabs:
 ## Project structure
 
 ```
+prisma/
+  schema.prisma              # Postgres schema for every stateful feature (Prisma)
 middleware.ts                 # Edge-runtime cookie-presence gate (see "Access control" above)
 app/
   login/page.tsx             # Login form (posts to /api/auth/login)
@@ -248,17 +279,18 @@ lib/
   gemini-vision.ts            # Gemini-specific API call mechanics
   vision-provider.ts          # Server-side dispatcher: routes to claude-vision or gemini-vision
   vision-provider-metadata.ts # Client-safe provider labels/descriptions (no SDK imports)
-  ai-settings.ts               # In-app settings store (JSON file) with env-var fallback
-  auth.ts                      # Session/user store: scrypt hashing, HMAC session tokens, user CRUD
+  prisma.ts                    # Shared PrismaClient singleton (dev-mode hot-reload safe)
+  ai-settings.ts               # In-app settings store (Postgres) with env-var fallback
+  auth.ts                      # Session/user store: scrypt hashing, HMAC session tokens, user CRUD (Postgres)
   auth-constants.ts            # Cookie name/expiry constants shared with Edge middleware
   measurement-utils.ts        # Scale calibration + geometry math
   estimate-utils.ts           # Pure material/cost pricing engine (shared client+server)
   currency-utils.ts            # Shared PHP (₱) currency formatter used app-wide
   project-types.ts             # Tool #2's TypeScript schema (client-safe, no fs/SDK imports)
-  project-store.ts             # Tool #2's server-only JSON-file persistence + CRUD
+  project-store.ts             # Tool #2's server-only Postgres persistence + CRUD
   project-kpi-utils.ts         # Pure KPI math over a ProjectBundle (client-safe)
   template-types.ts            # Templates' TypeScript schema (client-safe)
-  template-store.ts            # Templates' server-only JSON-file persistence + CRUD
+  template-store.ts            # Templates' server-only Postgres persistence + CRUD
   types.ts                    # Full TypeScript schema for Tool #1 + the app shell
 ```
 

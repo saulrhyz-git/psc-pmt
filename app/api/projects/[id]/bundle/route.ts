@@ -20,11 +20,11 @@ interface RouteParams {
 }
 
 export async function GET(req: NextRequest, { params }: RouteParams): Promise<NextResponse<ProjectBundleResponseBody>> {
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
 
-  const bundle = getProjectBundle(params.id);
+  const bundle = await getProjectBundle(params.id);
   if (!bundle) {
     return NextResponse.json({ success: false, error: `Project "${params.id}" not found.` }, { status: 404 });
   }

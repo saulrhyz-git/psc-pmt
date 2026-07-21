@@ -17,12 +17,12 @@ import type { CreateProjectBody, ProjectResponseBody, ProjectsListResponseBody }
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest): Promise<NextResponse<ProjectsListResponseBody>> {
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
 
   try {
-    return NextResponse.json({ success: true, projects: listProjects() }, { status: 200 });
+    return NextResponse.json({ success: true, projects: await listProjects() }, { status: 200 });
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error("[api/projects] GET failed:", err);
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<ProjectsListRe
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse<ProjectResponseBody>> {
-  if (!requireSession(req)) {
+  if (!(await requireSession(req))) {
     return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
   }
 
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ProjectRespon
     return NextResponse.json({ success: false, error: "Request body must be valid JSON." }, { status: 400 });
   }
 
-  const result = createProject(body);
+  const result = await createProject(body);
   if (!result.success || !result.data) {
     return NextResponse.json({ success: false, error: result.error }, { status: 400 });
   }

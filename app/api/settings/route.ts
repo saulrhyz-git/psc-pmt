@@ -28,12 +28,12 @@ export const runtime = "nodejs";
 // break analysis for the whole class.
 
 export async function GET(req: NextRequest): Promise<NextResponse<AiSettingsResponseBody>> {
-  if (!requireAdmin(req)) {
+  if (!(await requireAdmin(req))) {
     return NextResponse.json({ success: false, error: "Admin access required." }, { status: 403 });
   }
 
   try {
-    const status = getAiSettingsStatus();
+    const status = await getAiSettingsStatus();
     return NextResponse.json({ success: true, ...status }, { status: 200 });
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<AiSettingsResp
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse<AiSettingsResponseBody>> {
-  if (!requireAdmin(req)) {
+  if (!(await requireAdmin(req))) {
     return NextResponse.json({ success: false, error: "Admin access required." }, { status: 403 });
   }
 
@@ -64,8 +64,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<AiSettingsRes
   }
 
   try {
-    updateStoredSettings(body);
-    const status = getAiSettingsStatus();
+    await updateStoredSettings(body);
+    const status = await getAiSettingsStatus();
     return NextResponse.json({ success: true, ...status }, { status: 200 });
   } catch (err) {
     // eslint-disable-next-line no-console
