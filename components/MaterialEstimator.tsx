@@ -8,12 +8,21 @@
  * totals recalculate instantly using the same deterministic pricing engine
  * as the server (`computeMaterialEstimate` from app/api/estimate/route.ts),
  * so there's zero drift between the live UI and a persisted server estimate.
+ *
+ * Starting values: if `initialSettings` isn't passed in, this fetches the
+ * admin-configured defaults from GET /api/settings/cost-estimate (see
+ * lib/cost-settings.ts, components/settings-templates/
+ * CostEstimateDefaultsSettings.tsx) instead of the hardcoded
+ * DEFAULT_UNIT_COST_SETTINGS placeholder — that hardcoded constant is now
+ * only the last-resort fallback if the fetch fails or nothing's been
+ * customized yet. "Reset defaults" also resets to the fetched admin
+ * defaults, not the hardcoded constant.
  * -----------------------------------------------------------------------------
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Calculator, DollarSign, Download, RotateCcw } from "lucide-react";
-import type { MaterialCategory, MaterialLineItem, Room, UnitCostSettings } from "@/lib/types";
+import type { CostEstimateDefaultsResponseBody, MaterialCategory, MaterialLineItem, Room, UnitCostSettings } from "@/lib/types";
 import { computeMaterialEstimate, DEFAULT_UNIT_COST_SETTINGS } from "@/lib/estimate-utils";
 import { CURRENCY_SYMBOL, formatCurrency } from "@/lib/currency-utils";
 
@@ -33,8 +42,47 @@ const CATEGORY_LABELS: Record<MaterialCategory, string> = {
 
 const CATEGORY_ORDER: MaterialCategory[] = ["paint", "drywall", "flooring", "trim", "labor", "other"];
 
+/** Short explanation of how each category's quantity is derived, shown under the category heading. */
+const CATEGORY_FORMULAS: Record<MaterialCategory, string> = {
+  paint: "Gallons = (wall area × 2 coats) ÷ 32.5 m² per gallon coverage. Total = gallons × cost/gallon.",
+  drywall: "Sheets = ceil(wall area × 1.1 waste ÷ 2.88 m² per 1.2m × 2.4m sheet). Total = sheets × cost/sheet.",
+  flooring: "Quantity = floor area × 1.1 waste factor. Total = sq m × cost/sq m.",
+  trim: "Quantity = room perimeter × 1.1 waste factor. Total = linear m × cost/linear m.",
+  labor: "Hours = floor area × labor hours/sq m rate. Total = hours × hourly rate.",
+  other: "Total = quantity × unit cost.",
+};
+
 export default function MaterialEstimator({ rooms, initialSettings }: MaterialEstimatorProps) {
   const [settings, setSettings] = useState<UnitCostSettings>(initialSettings ?? DEFAULT_UNIT_COST_SETTINGS);
+  const [loadedDefaults, setLoadedDefaults] = useState<UnitCostSettings>(DEFAULT_UNIT_COST_SETTINGS);
+  const hasEditedRef = useRef(false);
+
+  // Fetch the admin-configured defaults once on mount (unless the caller
+  // explicitly passed initialSettings, in which case it's in control). If
+  // the fetch fails (offline, not signed in, etc.) we just silently keep the
+  // hardcoded DEFAULT_UNIT_COST_SETTINGS — this is a convenience, not a
+  // critical-path dependency.
+  useEffect(() => {
+    if (initialSettings) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/settings/cost-estimate");
+        const payload = (await res.json()) as CostEstimateDefaultsResponseBody;
+        if (cancelled || !res.ok || !payload.success || !payload.settings) return;
+        setLoadedDefaults(payload.settings);
+        // Only apply if the user hasn't already started tweaking values —
+        // avoids clobbering an in-progress edit if this resolves late.
+        if (!hasEditedRef.current) setSettings(payload.settings);
+      } catch {
+        // Ignore — keep the hardcoded fallback.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const estimate = useMemo(() => {
     if (rooms.length === 0) return null;
@@ -58,10 +106,14 @@ export default function MaterialEstimator({ rooms, initialSettings }: MaterialEs
 
   const updateSetting = (key: keyof UnitCostSettings, value: number) => {
     if (Number.isNaN(value) || value < 0) return;
+    hasEditedRef.current = true;
     setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
-  const resetDefaults = () => setSettings(DEFAULT_UNIT_COST_SETTINGS);
+  const resetDefaults = () => {
+    hasEditedRef.current = false;
+    setSettings(loadedDefaults);
+  };
 
   const exportCsv = () => {
     if (!estimate) return;
@@ -152,21 +204,29 @@ export default function MaterialEstimator({ rooms, initialSettings }: MaterialEs
             </button>
           </div>
 
+          <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 border-b border-slate-200 bg-slate-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <span>Item</span>
+            <span className="w-24 text-right">Quantity</span>
+            <span className="w-20 text-right">Unit Cost</span>
+            <span className="w-24 text-right">Total</span>
+          </div>
+
           <div className="max-h-96 overflow-y-auto">
             {CATEGORY_ORDER.filter((cat) => groupedByCategory.has(cat)).map((category) => (
               <div key={category}>
-                <div className="sticky top-0 bg-slate-100 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  {CATEGORY_LABELS[category]}
+                <div className="sticky top-0 bg-slate-100 px-4 py-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{CATEGORY_LABELS[category]}</p>
+                  <p className="text-[10.5px] font-normal normal-case text-slate-400">{CATEGORY_FORMULAS[category]}</p>
                 </div>
                 <table className="w-full text-left text-sm">
                   <tbody className="divide-y divide-slate-100">
                     {groupedByCategory.get(category)!.map((item) => (
                       <tr key={item.id}>
                         <td className="w-1/2 px-4 py-2 text-slate-700">{item.label}</td>
-                        <td className="px-2 py-2 tabular-nums text-slate-500">
+                        <td className="px-2 py-2 text-right tabular-nums text-slate-500">
                           {item.quantity} {formatUnit(item.unit)}
                         </td>
-                        <td className="px-2 py-2 tabular-nums text-slate-500">{formatCurrency(item.unitCost)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums text-slate-500">{formatCurrency(item.unitCost)}</td>
                         <td className="px-4 py-2 text-right tabular-nums font-medium text-slate-800">
                           {formatCurrency(item.total)}
                         </td>
@@ -177,6 +237,11 @@ export default function MaterialEstimator({ rooms, initialSettings }: MaterialEs
               </div>
             ))}
           </div>
+
+          <p className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[11px] text-slate-400">
+            Total = Quantity × Unit Cost for each line item. Quantities are derived from the analyzed room
+            geometry; see the formula under each category above.
+          </p>
 
           <div className="space-y-1 border-t border-slate-200 bg-slate-50 px-4 py-3 text-sm">
             <div className="flex justify-between text-slate-600">

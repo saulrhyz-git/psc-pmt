@@ -270,6 +270,8 @@ app/
       [id]/export/route.ts    # GET — one-click Excel export (SheetJS)
       [id]/reference-files/route.ts + [fileId]/route.ts   # Reference file library CRUD (upload/list/download/delete)
       [id]/plan-analyses/route.ts + [analysisId]/route.ts # Saved Plan Analyses: list/create ("Add to Project")/get/delete
+    settings/
+      cost-estimate/route.ts  # GET (any user) / POST (admin) — default unit costs for the Cost Estimator
     templates/
       budget/route.ts         # GET list / POST create a Budget template
       budget/[id]/route.ts    # PATCH/DELETE a Budget template
@@ -304,6 +306,7 @@ components/
   settings-templates/
     SettingsTemplatesTool.tsx   # Sidebar tab orchestrator: Templates / Settings sub-tabs
     AiProviderSettings.tsx      # AI provider keys/models (admin-only, no modal chrome)
+    CostEstimateDefaultsSettings.tsx  # Default unit costs for the Cost Estimator (admin-only to edit)
     BudgetTemplateManager.tsx   # Create/edit/delete Budget templates
 lib/
   plan-extraction-schema.ts  # Shared prompt, JSON schema, and post-processing (provider-agnostic)
@@ -313,6 +316,7 @@ lib/
   vision-provider-metadata.ts # Client-safe provider labels/descriptions (no SDK imports)
   prisma.ts                    # Shared PrismaClient singleton (dev-mode hot-reload safe)
   ai-settings.ts               # In-app settings store (Postgres) with env-var fallback
+  cost-settings.ts             # Admin-configured default unit costs for the Cost Estimator (Postgres)
   auth.ts                      # Session/user store: scrypt hashing, HMAC session tokens, user CRUD (Postgres)
   auth-constants.ts            # Cookie name/expiry constants shared with Edge middleware
   measurement-utils.ts        # Scale calibration + geometry math

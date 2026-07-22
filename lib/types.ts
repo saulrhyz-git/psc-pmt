@@ -491,6 +491,21 @@ export interface AiSettingsResponseBody {
 export type AiSettingsUpdateBody = Partial<StoredAiSettings>;
 
 // -----------------------------------------------------------------------------
+// Admin-configured default unit costs for the Material/Cost Estimator — see
+// lib/cost-settings.ts, app/api/settings/cost-estimate/route.ts,
+// components/settings-templates/CostEstimateDefaultsSettings.tsx
+// -----------------------------------------------------------------------------
+
+export interface CostEstimateDefaultsResponseBody {
+  success: boolean;
+  settings?: UnitCostSettings;
+  error?: string;
+}
+
+/** POST body: any subset of UnitCostSettings fields; omitted fields keep their current stored value. */
+export type CostEstimateDefaultsUpdateBody = Partial<UnitCostSettings>;
+
+// -----------------------------------------------------------------------------
 // Authentication (login-gated access — see lib/auth.ts, app/api/auth/*,
 // app/login/page.tsx, components/UserManagement.tsx)
 // -----------------------------------------------------------------------------

@@ -78,6 +78,23 @@ model AiSettings {
   claudeModel  String?
 }
 
+/**
+ * Admin-configured default unit costs for the Material/Cost Estimator (see
+ * lib/cost-settings.ts). Singleton row (id = 1), same pattern as AiSettings.
+ * Any field left null falls back to the hardcoded DEFAULT_UNIT_COST_SETTINGS
+ * in lib/estimate-utils.ts.
+ */
+model CostEstimateDefaults {
+  id                 Int     @id
+  paintPerSqM        Float?
+  drywallPerSqM      Float?
+  flooringPerSqM     Float?
+  trimPerLinearM     Float?
+  laborRatePerHour   Float?
+  laborHoursPerSqM   Float?
+  contingencyPercent Float?
+}
+
 model Project {
   id                   String    @id
   name                 String

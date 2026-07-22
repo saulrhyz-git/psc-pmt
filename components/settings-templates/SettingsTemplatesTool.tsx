@@ -14,6 +14,7 @@
 import { useState, type ReactNode } from "react";
 import { Layers, Settings as SettingsIcon, ShieldAlert } from "lucide-react";
 import AiProviderSettings from "@/components/settings-templates/AiProviderSettings";
+import CostEstimateDefaultsSettings from "@/components/settings-templates/CostEstimateDefaultsSettings";
 import BudgetTemplateManager from "@/components/settings-templates/BudgetTemplateManager";
 import UserManagement from "@/components/UserManagement";
 
@@ -48,6 +49,9 @@ export default function SettingsTemplatesTool({ isAdmin }: { isAdmin: boolean })
         (isAdmin ? (
           <div className="flex flex-col gap-8">
             <AiProviderSettings />
+            <div className="border-t border-slate-100 pt-6">
+              <CostEstimateDefaultsSettings />
+            </div>
             <div>
               <h2 className="mb-3 text-sm font-semibold text-slate-800">User Management</h2>
               <UserManagement />
