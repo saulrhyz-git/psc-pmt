@@ -116,6 +116,7 @@ model Project {
   equipment      Equipment[]
   referenceFiles ReferenceFile[]
   planAnalyses   PlanAnalysis[]
+  costEstimates  ProjectCostEstimate[]
 }
 
 model Task {
@@ -225,6 +226,28 @@ model PlanAnalysis {
   resultJson Json
   createdAt  DateTime         @default(now())
 
-  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project       Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   referenceFile ReferenceFile?
+  costEstimate  ProjectCostEstimate?
+}
+
+/**
+ * A saved Material/Cost Estimate for a project — either created directly from
+ * the Project Management "Cost Estimate" tab or pushed automatically when the
+ * AI Plan Analyzer's "Add to Project" action includes a computed estimate
+ * (see lib/cost-estimate-store.ts). `sourceAnalysisId` links back to the
+ * PlanAnalysis it came from, when applicable; onDelete: SetNull so deleting
+ * the analysis doesn't take the estimate with it.
+ */
+model ProjectCostEstimate {
+  id               String   @id
+  projectId        String
+  fileName         String
+  sourceAnalysisId String?  @unique
+  settingsJson     Json
+  estimateJson     Json
+  createdAt        DateTime @default(now())
+
+  project        Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourceAnalysis PlanAnalysis? @relation(fields: [sourceAnalysisId], references: [id], onDelete: SetNull)
 }

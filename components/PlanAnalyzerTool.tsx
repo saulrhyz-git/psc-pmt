@@ -20,7 +20,7 @@
  * -----------------------------------------------------------------------------
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Building2,
@@ -44,11 +44,15 @@ import AddToProjectModal from "@/components/AddToProjectModal";
 import type {
   AnalysisStatus,
   AnalyzeResponseBody,
+  CostEstimateDefaultsResponseBody,
+  MaterialEstimate,
   PlanAnalysisResult,
+  UnitCostSettings,
   UploadedFileState,
   VisionProvider,
 } from "@/lib/types";
 import { formatDimension } from "@/lib/measurement-utils";
+import { computeMaterialEstimate, DEFAULT_UNIT_COST_SETTINGS } from "@/lib/estimate-utils";
 import { VISION_PROVIDERS } from "@/lib/vision-provider-metadata";
 
 /** localStorage key used to remember the student's/user's last provider choice across visits. */
@@ -82,12 +86,50 @@ export default function PlanAnalyzerTool({ canConfigureSettings, onOpenSettings 
   const [activeTab, setActiveTab] = useState<TabKey>("breakdown");
   const [showAddToProject, setShowAddToProject] = useState(false);
 
+  // Cost estimate settings live here (not in MaterialEstimator) so they're
+  // always available for "Add to Project" to push, regardless of whether the
+  // user has visited the Cost Estimate tab. Seeded from the admin-configured
+  // defaults (lib/cost-settings.ts) rather than the hardcoded
+  // DEFAULT_UNIT_COST_SETTINGS placeholder, which is only the last-resort
+  // fallback if that fetch fails.
+  const [costSettings, setCostSettings] = useState<UnitCostSettings>(DEFAULT_UNIT_COST_SETTINGS);
+  const [loadedCostDefaults, setLoadedCostDefaults] = useState<UnitCostSettings>(DEFAULT_UNIT_COST_SETTINGS);
+  const hasEditedCostSettingsRef = useRef(false);
+
   // Remember the last provider choice across visits (e.g. a classroom of
   // students who all pick Gemini once and don't want to re-select it).
   useEffect(() => {
     const saved = window.localStorage.getItem(PROVIDER_STORAGE_KEY);
     if (saved === "claude" || saved === "gemini") setProvider(saved);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/settings/cost-estimate");
+        const payload = (await res.json()) as CostEstimateDefaultsResponseBody;
+        if (cancelled || !res.ok || !payload.success || !payload.settings) return;
+        setLoadedCostDefaults(payload.settings);
+        if (!hasEditedCostSettingsRef.current) setCostSettings(payload.settings);
+      } catch {
+        // Ignore — keep the hardcoded fallback.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleCostSettingsChange = useCallback((next: UnitCostSettings) => {
+    hasEditedCostSettingsRef.current = true;
+    setCostSettings(next);
+  }, []);
+
+  const handleResetCostDefaults = useCallback(() => {
+    hasEditedCostSettingsRef.current = false;
+    setCostSettings(loadedCostDefaults);
+  }, [loadedCostDefaults]);
 
   const handleProviderChange = useCallback((next: VisionProvider) => {
     setProvider(next);
@@ -152,6 +194,18 @@ export default function PlanAnalyzerTool({ canConfigureSettings, onOpenSettings 
     () => result?.spacePlanningComments.filter((c) => c.severity === "critical" || c.severity === "warning").length ?? 0,
     [result]
   );
+
+  // Computed here (not inside MaterialEstimator) so "Add to Project" always
+  // has the current Material Estimate available, even if the user never
+  // opened the Cost Estimate tab.
+  const costEstimate: MaterialEstimate | null = useMemo(() => {
+    if (!result || result.rooms.length === 0) return null;
+    try {
+      return computeMaterialEstimate(result.rooms, costSettings);
+    } catch {
+      return null;
+    }
+  }, [result, costSettings]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -236,7 +290,15 @@ export default function PlanAnalyzerTool({ canConfigureSettings, onOpenSettings 
                     onChangeVisibleFurnitureIds={setVisibleFurnitureIds}
                   />
                 )}
-                {activeTab === "estimate" && <MaterialEstimator rooms={result.rooms} />}
+                {activeTab === "estimate" && (
+                  <MaterialEstimator
+                    rooms={result.rooms}
+                    settings={costSettings}
+                    onSettingsChange={handleCostSettingsChange}
+                    onResetDefaults={handleResetCostDefaults}
+                    estimate={costEstimate}
+                  />
+                )}
               </div>
             </div>
 
@@ -251,6 +313,7 @@ export default function PlanAnalyzerTool({ canConfigureSettings, onOpenSettings 
             onClose={() => setShowAddToProject(false)}
             result={result}
             context={context}
+            costEstimate={costEstimate ? { settings: costSettings, materialEstimate: costEstimate } : null}
           />
         </div>
       )}

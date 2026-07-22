@@ -7,8 +7,15 @@
  * their Project Management projects and saves the current PlanAnalysisResult
  * to it via POST /api/projects/:id/plan-analyses. That endpoint also
  * generates a PDF report and drops it into the project's Reference Files
- * library (see lib/plan-analysis-store.ts) — this modal just reports back
- * that both happened.
+ * library (see lib/plan-analysis-store.ts).
+ *
+ * If a computed Cost Estimate is available (from components/PlanAnalyzerTool.tsx
+ * — whatever's currently shown in the Cost Estimate tab, admin defaults or
+ * user-tweaked), this also pushes it to the project's Cost Estimates via a
+ * second POST to /api/projects/:id/cost-estimates, linked back to the saved
+ * analysis via sourceAnalysisId (see lib/cost-estimate-store.ts). That second
+ * call is best-effort: if it fails, the analysis + PDF are still saved and we
+ * just surface a softer warning rather than failing the whole flow.
  * -----------------------------------------------------------------------------
  */
 
@@ -16,22 +23,27 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, FolderPlus, Loader2, X } from "lucide-react";
 import type { Project, ProjectsListResponseBody } from "@/lib/project-types";
 import type { AddPlanAnalysisToProjectBody, PlanAnalysisResponseBody } from "@/lib/plan-analysis-types";
-import type { PlanAnalysisResult } from "@/lib/types";
+import type { AddCostEstimateToProjectBody, CostEstimateResponseBody } from "@/lib/cost-estimate-types";
+import type { MaterialEstimate, PlanAnalysisResult, UnitCostSettings } from "@/lib/types";
 
 interface AddToProjectModalProps {
   open: boolean;
   onClose: () => void;
   result: PlanAnalysisResult;
   context?: string;
+  /** Whatever's currently computed in the Cost Estimate tab, if any — pushed to the project alongside the analysis. */
+  costEstimate: { settings: UnitCostSettings; materialEstimate: MaterialEstimate } | null;
 }
 
-export default function AddToProjectModal({ open, onClose, result, context }: AddToProjectModalProps) {
+export default function AddToProjectModal({ open, onClose, result, context, costEstimate }: AddToProjectModalProps) {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedProjectName, setSavedProjectName] = useState<string | null>(null);
+  const [costEstimateSaved, setCostEstimateSaved] = useState(false);
+  const [costEstimateWarning, setCostEstimateWarning] = useState<string | null>(null);
 
   const fetchProjects = useCallback(async () => {
     setLoadingProjects(true);
@@ -55,6 +67,8 @@ export default function AddToProjectModal({ open, onClose, result, context }: Ad
     if (open) {
       setSavedProjectName(null);
       setError(null);
+      setCostEstimateSaved(false);
+      setCostEstimateWarning(null);
       void fetchProjects();
     }
   }, [open, fetchProjects]);
@@ -85,6 +99,34 @@ export default function AddToProjectModal({ open, onClose, result, context }: Ad
       }
       const project = projects?.find((p) => p.id === selectedProjectId);
       setSavedProjectName(project?.name ?? "the project");
+
+      // Best-effort: push the currently computed Cost Estimate too, linked
+      // back to the analysis we just saved. A failure here shouldn't undo or
+      // block the successful analysis save above — just surface a warning.
+      if (costEstimate && costEstimate.materialEstimate.lineItems.length > 0) {
+        try {
+          const costBody: AddCostEstimateToProjectBody = {
+            fileName: result.sourceFileName,
+            sourceAnalysisId: payload.analysis.id,
+            settings: costEstimate.settings,
+            materialEstimate: costEstimate.materialEstimate,
+          };
+          const costRes = await fetch(`/api/projects/${selectedProjectId}/cost-estimates`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(costBody),
+          });
+          const costPayload = (await costRes.json()) as CostEstimateResponseBody;
+          if (!costRes.ok || !costPayload.success) {
+            throw new Error(costPayload.error || "Failed to save the cost estimate.");
+          }
+          setCostEstimateSaved(true);
+        } catch (err) {
+          setCostEstimateWarning(
+            err instanceof Error ? err.message : "The analysis was saved, but the cost estimate could not be."
+          );
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add this analysis to the project.");
     } finally {
@@ -126,9 +168,17 @@ export default function AddToProjectModal({ open, onClose, result, context }: Ad
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
                 Added to <strong>{savedProjectName}</strong>. A PDF report of this analysis was also saved to that
-                project&apos;s Reference Files library — view both from the Project Management tab.
+                project&apos;s Reference Files library
+                {costEstimateSaved && " and the computed cost estimate was saved to its Cost Estimates"} — view from
+                the Project Management tab.
               </span>
             </div>
+            {costEstimateWarning && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{costEstimateWarning}</span>
+              </div>
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -141,8 +191,11 @@ export default function AddToProjectModal({ open, onClose, result, context }: Ad
           <form onSubmit={handleSubmit} className="flex flex-col gap-4 px-5 py-5">
             <p className="text-xs text-slate-500">
               Save this analysis (<span className="font-medium text-slate-700">{result.sourceFileName}</span>) to a
-              project. It will appear under that project&apos;s Plan Analyses, and a PDF summary will be added to its
-              Reference Files.
+              project. It will appear under that project&apos;s Plan Analyses, a PDF summary will be added to its
+              Reference Files
+              {costEstimate && costEstimate.materialEstimate.lineItems.length > 0
+                ? ", and the current Cost Estimate will be saved to its Cost Estimates."
+                : "."}
             </p>
 
             {loadingProjects ? (

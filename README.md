@@ -270,6 +270,7 @@ app/
       [id]/export/route.ts    # GET — one-click Excel export (SheetJS)
       [id]/reference-files/route.ts + [fileId]/route.ts   # Reference file library CRUD (upload/list/download/delete)
       [id]/plan-analyses/route.ts + [analysisId]/route.ts # Saved Plan Analyses: list/create ("Add to Project")/get/delete
+      [id]/cost-estimates/route.ts + [estimateId]/route.ts # Saved Cost Estimates: list/create ("Add to Project" or PM tab)/get/delete
     settings/
       cost-estimate/route.ts  # GET (any user) / POST (admin) — default unit costs for the Cost Estimator
     templates/
@@ -303,6 +304,7 @@ components/
     phase-colors.ts             # Deterministic phase -> color mapping
     ReferenceFileLibrary.tsx    # Per-project reference file upload/list/download/delete
     PlanAnalysesList.tsx        # Saved Plan Analyses list + detail view (reuses Tool #1's viewer components)
+    CostEstimatesList.tsx       # Saved Cost Estimates list + read-only itemized detail view
   settings-templates/
     SettingsTemplatesTool.tsx   # Sidebar tab orchestrator: Templates / Settings sub-tabs
     AiProviderSettings.tsx      # AI provider keys/models (admin-only, no modal chrome)
@@ -332,6 +334,8 @@ lib/
   plan-analysis-types.ts       # Saved Plan Analyses' TypeScript schema (client-safe)
   plan-analysis-store.ts       # Saved Plan Analyses' server-only Postgres persistence ("Add to Project")
   plan-analysis-pdf.ts         # Renders a PlanAnalysisResult to a PDF report (pdfkit)
+  cost-estimate-types.ts       # Saved Cost Estimates' TypeScript schema (client-safe)
+  cost-estimate-store.ts       # Saved Cost Estimates' server-only Postgres persistence ("Add to Project" or PM tab)
   types.ts                    # Full TypeScript schema for Tool #1 + the app shell
 ```
 

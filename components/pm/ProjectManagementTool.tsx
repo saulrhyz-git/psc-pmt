@@ -26,14 +26,16 @@ import ExportButton from "@/components/pm/ExportButton";
 import StatusBadge from "@/components/pm/StatusBadge";
 import ReferenceFileLibrary from "@/components/pm/ReferenceFileLibrary";
 import PlanAnalysesList from "@/components/pm/PlanAnalysesList";
+import CostEstimatesList from "@/components/pm/CostEstimatesList";
 
-type PmTab = "dashboard" | "tasks" | "gantt" | "budget" | "resources" | "plan-analyses" | "reference-files";
+type PmTab = "dashboard" | "tasks" | "gantt" | "budget" | "cost-estimate" | "resources" | "plan-analyses" | "reference-files";
 
 const TABS: { key: PmTab; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
   { key: "tasks", label: "Tasks" },
   { key: "gantt", label: "Gantt Timeline" },
   { key: "budget", label: "Budget" },
+  { key: "cost-estimate", label: "Cost Estimate" },
   { key: "resources", label: "Resources" },
   { key: "plan-analyses", label: "Plan Analyses" },
   { key: "reference-files", label: "Reference Files" },
@@ -193,6 +195,7 @@ export default function ProjectManagementTool() {
               onChanged={handleChanged}
             />
           )}
+          {activeTab === "cost-estimate" && <CostEstimatesList projectId={bundle.project.id} />}
           {activeTab === "resources" && (
             <ResourceManagement
               projectId={bundle.project.id}

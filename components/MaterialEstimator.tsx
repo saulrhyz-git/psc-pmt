@@ -9,26 +9,27 @@
  * as the server (`computeMaterialEstimate` from app/api/estimate/route.ts),
  * so there's zero drift between the live UI and a persisted server estimate.
  *
- * Starting values: if `initialSettings` isn't passed in, this fetches the
- * admin-configured defaults from GET /api/settings/cost-estimate (see
- * lib/cost-settings.ts, components/settings-templates/
- * CostEstimateDefaultsSettings.tsx) instead of the hardcoded
- * DEFAULT_UNIT_COST_SETTINGS placeholder — that hardcoded constant is now
- * only the last-resort fallback if the fetch fails or nothing's been
- * customized yet. "Reset defaults" also resets to the fetched admin
- * defaults, not the hardcoded constant.
+ * Controlled component: `settings`/`estimate` live in the parent
+ * (components/PlanAnalyzerTool.tsx) rather than here, so the parent always
+ * has the current computed Material Estimate available — that's what lets
+ * "Add to Project" push whatever's shown in this tab to the project's Cost
+ * Estimates, even before the user tweaks anything (the parent seeds
+ * `settings` from the admin-configured defaults at GET
+ * /api/settings/cost-estimate; see lib/cost-settings.ts).
  * -----------------------------------------------------------------------------
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { Calculator, DollarSign, Download, RotateCcw } from "lucide-react";
-import type { CostEstimateDefaultsResponseBody, MaterialCategory, MaterialLineItem, Room, UnitCostSettings } from "@/lib/types";
-import { computeMaterialEstimate, DEFAULT_UNIT_COST_SETTINGS } from "@/lib/estimate-utils";
+import type { MaterialCategory, MaterialEstimate, MaterialLineItem, Room, UnitCostSettings } from "@/lib/types";
 import { CURRENCY_SYMBOL, formatCurrency } from "@/lib/currency-utils";
 
 interface MaterialEstimatorProps {
   rooms: Room[];
-  initialSettings?: UnitCostSettings;
+  settings: UnitCostSettings;
+  onSettingsChange: (next: UnitCostSettings) => void;
+  onResetDefaults: () => void;
+  estimate: MaterialEstimate | null;
 }
 
 const CATEGORY_LABELS: Record<MaterialCategory, string> = {
@@ -52,47 +53,7 @@ const CATEGORY_FORMULAS: Record<MaterialCategory, string> = {
   other: "Total = quantity × unit cost.",
 };
 
-export default function MaterialEstimator({ rooms, initialSettings }: MaterialEstimatorProps) {
-  const [settings, setSettings] = useState<UnitCostSettings>(initialSettings ?? DEFAULT_UNIT_COST_SETTINGS);
-  const [loadedDefaults, setLoadedDefaults] = useState<UnitCostSettings>(DEFAULT_UNIT_COST_SETTINGS);
-  const hasEditedRef = useRef(false);
-
-  // Fetch the admin-configured defaults once on mount (unless the caller
-  // explicitly passed initialSettings, in which case it's in control). If
-  // the fetch fails (offline, not signed in, etc.) we just silently keep the
-  // hardcoded DEFAULT_UNIT_COST_SETTINGS — this is a convenience, not a
-  // critical-path dependency.
-  useEffect(() => {
-    if (initialSettings) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/settings/cost-estimate");
-        const payload = (await res.json()) as CostEstimateDefaultsResponseBody;
-        if (cancelled || !res.ok || !payload.success || !payload.settings) return;
-        setLoadedDefaults(payload.settings);
-        // Only apply if the user hasn't already started tweaking values —
-        // avoids clobbering an in-progress edit if this resolves late.
-        if (!hasEditedRef.current) setSettings(payload.settings);
-      } catch {
-        // Ignore — keep the hardcoded fallback.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const estimate = useMemo(() => {
-    if (rooms.length === 0) return null;
-    try {
-      return computeMaterialEstimate(rooms, settings);
-    } catch {
-      return null;
-    }
-  }, [rooms, settings]);
-
+export default function MaterialEstimator({ rooms, settings, onSettingsChange, onResetDefaults, estimate }: MaterialEstimatorProps) {
   const groupedByCategory = useMemo(() => {
     const map = new Map<MaterialCategory, MaterialLineItem[]>();
     if (!estimate) return map;
@@ -106,13 +67,7 @@ export default function MaterialEstimator({ rooms, initialSettings }: MaterialEs
 
   const updateSetting = (key: keyof UnitCostSettings, value: number) => {
     if (Number.isNaN(value) || value < 0) return;
-    hasEditedRef.current = true;
-    setSettings((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const resetDefaults = () => {
-    hasEditedRef.current = false;
-    setSettings(loadedDefaults);
+    onSettingsChange({ ...settings, [key]: value });
   };
 
   const exportCsv = () => {
@@ -160,7 +115,7 @@ export default function MaterialEstimator({ rooms, initialSettings }: MaterialEs
           </h3>
           <button
             type="button"
-            onClick={resetDefaults}
+            onClick={onResetDefaults}
             className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
           >
             <RotateCcw className="h-3 w-3" />
