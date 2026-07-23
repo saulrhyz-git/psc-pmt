@@ -4,6 +4,9 @@
  * GET    /api/projects/:id/cost-estimates/:estimateId — full saved cost
  *        estimate detail (line items + the settings used to produce them),
  *        for the Project Management tab's detail view.
+ * PATCH  /api/projects/:id/cost-estimates/:estimateId — update a saved cost
+ *        estimate's unit-cost settings and recomputed totals, from live edits
+ *        in the PM tab's calculator (components/pm/CostEstimatesList.tsx).
  * DELETE /api/projects/:id/cost-estimates/:estimateId — remove a saved cost
  *        estimate. Does not affect its source Plan Analysis, if any.
  * -----------------------------------------------------------------------------
@@ -11,8 +14,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
-import { deleteCostEstimate, getCostEstimate } from "@/lib/cost-estimate-store";
-import type { CostEstimateResponseBody } from "@/lib/cost-estimate-types";
+import { deleteCostEstimate, getCostEstimate, updateCostEstimate } from "@/lib/cost-estimate-store";
+import type { CostEstimateResponseBody, UpdateCostEstimateBody } from "@/lib/cost-estimate-types";
 
 export const runtime = "nodejs";
 
@@ -36,6 +39,34 @@ export async function GET(req: NextRequest, { params }: RouteParams): Promise<Ne
     console.error("[api/projects/:id/cost-estimates/:estimateId] GET failed:", err);
     return NextResponse.json(
       { success: false, error: "Failed to load this cost estimate. (Is the database reachable and migrated?)" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<NextResponse<CostEstimateResponseBody>> {
+  try {
+    if (!(await requireSession(req))) {
+      return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
+    }
+
+    let body: UpdateCostEstimateBody;
+    try {
+      body = (await req.json()) as UpdateCostEstimateBody;
+    } catch {
+      return NextResponse.json({ success: false, error: "Request body must be valid JSON." }, { status: 400 });
+    }
+
+    const result = await updateCostEstimate(params.id, params.estimateId, body);
+    if (!result.success || !result.data) {
+      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+    }
+    return NextResponse.json({ success: true, costEstimate: result.data }, { status: 200 });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[api/projects/:id/cost-estimates/:estimateId] PATCH failed:", err);
+    return NextResponse.json(
+      { success: false, error: "Failed to update this cost estimate. (Is the database reachable and migrated?)" },
       { status: 500 }
     );
   }

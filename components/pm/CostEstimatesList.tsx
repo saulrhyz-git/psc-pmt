@@ -6,22 +6,28 @@
  * Lists Cost Estimates saved to a project — pushed automatically by the AI
  * Plan Analyzer's "Add to Project" action (see components/AddToProjectModal.tsx,
  * lib/cost-estimate-store.ts) when a Material Estimate was computed, or (in a
- * future iteration) added directly from this tab. Clicking one opens a
- * read-only itemized breakdown, mirroring components/MaterialEstimator.tsx's
- * table but without the live-editing controls.
+ * future iteration) added directly from this tab. Clicking one opens the same
+ * live calculator used in the AI Plan Analyzer's Cost Estimate tab
+ * (components/MaterialEstimator.tsx) — unit costs can be tweaked and the
+ * result saved back via PATCH, recomputed from the saved room geometry
+ * (roomsJson). Estimates saved before roomsJson existed fall back to a
+ * read-only breakdown, since there's no geometry to recompute from.
  * -----------------------------------------------------------------------------
  */
 
-import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Calculator, Loader2, Sparkles, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Calculator, CheckCircle2, Loader2, Save, Sparkles, Trash2, X } from "lucide-react";
 import type {
   CostEstimateDetail,
   CostEstimateResponseBody,
   CostEstimateSummary,
   CostEstimatesListResponseBody,
+  UpdateCostEstimateBody,
 } from "@/lib/cost-estimate-types";
-import type { MaterialCategory, MaterialLineItem } from "@/lib/types";
+import type { MaterialCategory, MaterialLineItem, UnitCostSettings } from "@/lib/types";
 import { formatCurrency } from "@/lib/currency-utils";
+import { computeMaterialEstimate } from "@/lib/estimate-utils";
+import MaterialEstimator from "@/components/MaterialEstimator";
 
 const CATEGORY_LABELS: Record<MaterialCategory, string> = {
   paint: "Paint",
@@ -144,27 +150,41 @@ export default function CostEstimatesList({ projectId }: { projectId: string }) 
       )}
 
       {selectedId && (
-        <CostEstimateDetailModal projectId={projectId} estimateId={selectedId} onClose={() => setSelectedId(null)} />
+        <CostEstimateDetailModal
+          projectId={projectId}
+          estimateId={selectedId}
+          onClose={() => setSelectedId(null)}
+          onSaved={() => void fetchEstimates()}
+        />
       )}
     </div>
   );
 }
 
 // -----------------------------------------------------------------------------
-// Detail modal
+// Detail modal — live calculator (same as the AI Plan Analyzer's Cost Estimate
+// tab) when room geometry is available, read-only breakdown otherwise.
 // -----------------------------------------------------------------------------
 
 function CostEstimateDetailModal({
   projectId,
   estimateId,
   onClose,
+  onSaved,
 }: {
   projectId: string;
   estimateId: string;
   onClose: () => void;
+  /** Called after a successful save so the parent list's totals stay in sync. */
+  onSaved: () => void;
 }) {
   const [detail, setDetail] = useState<CostEstimateDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [settings, setSettings] = useState<UnitCostSettings | null>(null);
+  const [savedSettings, setSavedSettings] = useState<UnitCostSettings | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -175,7 +195,10 @@ function CostEstimateDetailModal({
         if (!res.ok || !payload.success || !payload.costEstimate) {
           throw new Error(payload.error || "Failed to load this cost estimate.");
         }
-        if (!cancelled) setDetail(payload.costEstimate);
+        if (cancelled) return;
+        setDetail(payload.costEstimate);
+        setSettings(payload.costEstimate.settings);
+        setSavedSettings(payload.costEstimate.settings);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load this cost estimate.");
       }
@@ -185,8 +208,50 @@ function CostEstimateDetailModal({
     };
   }, [projectId, estimateId]);
 
+  const hasRooms = !!detail && detail.rooms.length > 0;
+
+  const estimate = useMemo(() => {
+    if (!detail || !settings) return null;
+    if (!hasRooms) return detail.materialEstimate;
+    try {
+      return computeMaterialEstimate(detail.rooms, settings);
+    } catch {
+      return detail.materialEstimate;
+    }
+  }, [detail, settings, hasRooms]);
+
+  const isDirty = !!settings && !!savedSettings && JSON.stringify(settings) !== JSON.stringify(savedSettings);
+
+  const handleSave = useCallback(async () => {
+    if (!settings || !estimate) return;
+    setSaving(true);
+    setSaveError(null);
+    setJustSaved(false);
+    try {
+      const body: UpdateCostEstimateBody = { settings, materialEstimate: estimate };
+      const res = await fetch(`/api/projects/${projectId}/cost-estimates/${estimateId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = (await res.json()) as CostEstimateResponseBody;
+      if (!res.ok || !payload.success || !payload.costEstimate) {
+        throw new Error(payload.error || "Failed to save changes.");
+      }
+      setDetail(payload.costEstimate);
+      setSavedSettings(payload.costEstimate.settings);
+      setJustSaved(true);
+      onSaved();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save changes.");
+    } finally {
+      setSaving(false);
+    }
+  }, [projectId, estimateId, settings, estimate, onSaved]);
+
+  // Only needed for the read-only fallback (no saved room geometry).
   const groupedByCategory = new Map<MaterialCategory, MaterialLineItem[]>();
-  if (detail) {
+  if (!hasRooms && detail) {
     for (const item of detail.materialEstimate.lineItems) {
       const list = groupedByCategory.get(item.category) ?? [];
       list.push(item);
@@ -198,7 +263,7 @@ function CostEstimateDetailModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={onClose} role="presentation">
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+        className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
         role="dialog"
         aria-modal="true"
       >
@@ -207,21 +272,48 @@ function CostEstimateDetailModal({
             <h2 className="text-sm font-semibold text-slate-800">{detail?.fileName ?? "Loading..."}</h2>
             {detail && <p className="text-xs text-slate-500">{new Date(detail.createdAt).toLocaleString()}</p>}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {hasRooms && (
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!isDirty || saving}
+                className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                {isDirty ? "Save changes" : "Saved"}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto p-5">
           {error && (
-            <div className="m-5 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {saveError && (
+            <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{saveError}</span>
+            </div>
+          )}
+
+          {justSaved && !isDirty && (
+            <div className="mb-3 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>Changes saved.</span>
             </div>
           )}
 
@@ -232,51 +324,75 @@ function CostEstimateDetailModal({
             </div>
           )}
 
-          {detail && (
+          {detail && settings && hasRooms && (
+            <MaterialEstimator
+              rooms={detail.rooms}
+              settings={settings}
+              onSettingsChange={(next) => {
+                setSettings(next);
+                setJustSaved(false);
+              }}
+              onResetDefaults={() => {
+                setSettings(savedSettings);
+                setJustSaved(false);
+              }}
+              estimate={estimate}
+              resetLabel="Reset to saved"
+            />
+          )}
+
+          {detail && !hasRooms && (
             <>
-              <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 border-b border-slate-200 bg-slate-50 px-5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                <span>Item</span>
-                <span className="w-24 text-right">Quantity</span>
-                <span className="w-20 text-right">Unit Cost</span>
-                <span className="w-24 text-right">Total</span>
+              <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+                This estimate was saved before live editing was available, so it can only be viewed here — the room
+                geometry needed to recompute it wasn&apos;t saved. Re-run the source plan through the AI Plan
+                Analyzer and use &quot;Add to Project&quot; again to get an editable estimate.
               </div>
+              <div className="overflow-hidden rounded-xl border border-slate-200">
+                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 border-b border-slate-200 bg-slate-50 px-5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  <span>Item</span>
+                  <span className="w-24 text-right">Quantity</span>
+                  <span className="w-20 text-right">Unit Cost</span>
+                  <span className="w-24 text-right">Total</span>
+                </div>
 
-              {CATEGORY_ORDER.filter((cat) => groupedByCategory.has(cat)).map((category) => (
-                <div key={category}>
-                  <div className="bg-slate-100 px-5 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    {CATEGORY_LABELS[category]}
+                {CATEGORY_ORDER.filter((cat) => groupedByCategory.has(cat)).map((category) => (
+                  <div key={category}>
+                    <div className="bg-slate-100 px-5 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      {CATEGORY_LABELS[category]}
+                    </div>
+                    <table className="w-full text-left text-sm">
+                      <tbody className="divide-y divide-slate-100">
+                        {groupedByCategory.get(category)!.map((item) => (
+                          <tr key={item.id}>
+                            <td className="w-1/2 px-5 py-2 text-slate-700">{item.label}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-slate-500">
+                              {item.quantity} {UNIT_LABELS[item.unit] ?? item.unit}
+                            </td>
+                            <td className="px-2 py-2 text-right tabular-nums text-slate-500">{formatCurrency(item.unitCost)}</td>
+                            <td className="px-5 py-2 text-right tabular-nums font-medium text-slate-800">
+                              {formatCurrency(item.total)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                  <table className="w-full text-left text-sm">
-                    <tbody className="divide-y divide-slate-100">
-                      {groupedByCategory.get(category)!.map((item) => (
-                        <tr key={item.id}>
-                          <td className="w-1/2 px-5 py-2 text-slate-700">{item.label}</td>
-                          <td className="px-2 py-2 text-right tabular-nums text-slate-500">
-                            {item.quantity} {UNIT_LABELS[item.unit] ?? item.unit}
-                          </td>
-                          <td className="px-2 py-2 text-right tabular-nums text-slate-500">{formatCurrency(item.unitCost)}</td>
-                          <td className="px-5 py-2 text-right tabular-nums font-medium text-slate-800">
-                            {formatCurrency(item.total)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ))}
+                ))}
 
-              <div className="space-y-1 border-t border-slate-200 bg-slate-50 px-5 py-3 text-sm">
-                <div className="flex justify-between text-slate-600">
-                  <span>Subtotal</span>
-                  <span className="tabular-nums">{formatCurrency(detail.materialEstimate.subtotal)}</span>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>Contingency ({(detail.materialEstimate.contingencyPercent * 100).toFixed(0)}%)</span>
-                  <span className="tabular-nums">{formatCurrency(detail.materialEstimate.contingencyAmount)}</span>
-                </div>
-                <div className="flex justify-between border-t border-slate-200 pt-1.5 text-base font-semibold text-slate-900">
-                  <span>Total Estimate</span>
-                  <span className="tabular-nums">{formatCurrency(detail.materialEstimate.total)}</span>
+                <div className="space-y-1 border-t border-slate-200 bg-slate-50 px-5 py-3 text-sm">
+                  <div className="flex justify-between text-slate-600">
+                    <span>Subtotal</span>
+                    <span className="tabular-nums">{formatCurrency(detail.materialEstimate.subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Contingency ({(detail.materialEstimate.contingencyPercent * 100).toFixed(0)}%)</span>
+                    <span className="tabular-nums">{formatCurrency(detail.materialEstimate.contingencyAmount)}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-slate-200 pt-1.5 text-base font-semibold text-slate-900">
+                    <span>Total Estimate</span>
+                    <span className="tabular-nums">{formatCurrency(detail.materialEstimate.total)}</span>
+                  </div>
                 </div>
               </div>
             </>

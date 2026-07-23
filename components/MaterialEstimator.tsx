@@ -30,6 +30,10 @@ interface MaterialEstimatorProps {
   onSettingsChange: (next: UnitCostSettings) => void;
   onResetDefaults: () => void;
   estimate: MaterialEstimate | null;
+  /** Shown in place of the calculator when `rooms` is empty. Defaults to the AI Plan Analyzer's wording. */
+  emptyStateMessage?: string;
+  /** Label for the reset button — defaults to "Reset defaults". The Project Management tab uses "Reset to saved". */
+  resetLabel?: string;
 }
 
 const CATEGORY_LABELS: Record<MaterialCategory, string> = {
@@ -53,7 +57,15 @@ const CATEGORY_FORMULAS: Record<MaterialCategory, string> = {
   other: "Total = quantity × unit cost.",
 };
 
-export default function MaterialEstimator({ rooms, settings, onSettingsChange, onResetDefaults, estimate }: MaterialEstimatorProps) {
+export default function MaterialEstimator({
+  rooms,
+  settings,
+  onSettingsChange,
+  onResetDefaults,
+  estimate,
+  emptyStateMessage = "Analyze a plan to generate a material and cost estimate.",
+  resetLabel = "Reset defaults",
+}: MaterialEstimatorProps) {
   const groupedByCategory = useMemo(() => {
     const map = new Map<MaterialCategory, MaterialLineItem[]>();
     if (!estimate) return map;
@@ -99,7 +111,7 @@ export default function MaterialEstimator({ rooms, settings, onSettingsChange, o
     return (
       <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
         <Calculator className="h-6 w-6 text-slate-400" />
-        Analyze a plan to generate a material and cost estimate.
+        {emptyStateMessage}
       </div>
     );
   }
@@ -119,7 +131,7 @@ export default function MaterialEstimator({ rooms, settings, onSettingsChange, o
             className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
           >
             <RotateCcw className="h-3 w-3" />
-            Reset defaults
+            {resetLabel}
           </button>
         </div>
 

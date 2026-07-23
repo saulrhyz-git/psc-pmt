@@ -273,7 +273,7 @@ app/
       [id]/export/route.ts    # GET — one-click Excel export (SheetJS)
       [id]/reference-files/route.ts + [fileId]/route.ts   # Reference file library CRUD (upload/list/download/delete)
       [id]/plan-analyses/route.ts + [analysisId]/route.ts # Saved Plan Analyses: list/create ("Add to Project")/get/delete
-      [id]/cost-estimates/route.ts + [estimateId]/route.ts # Saved Cost Estimates: list/create ("Add to Project" or PM tab)/get/delete
+      [id]/cost-estimates/route.ts + [estimateId]/route.ts # Saved Cost Estimates: list/create ("Add to Project" or PM tab)/get/update (PATCH, live edits)/delete
     settings/
       cost-estimate/route.ts  # GET (any user) / POST (admin) — default unit costs for the Cost Estimator
     templates/
@@ -307,7 +307,7 @@ components/
     phase-colors.ts             # Deterministic phase -> color mapping
     ReferenceFileLibrary.tsx    # Per-project reference file upload/list/download/delete
     PlanAnalysesList.tsx        # Saved Plan Analyses list + detail view (reuses Tool #1's viewer components)
-    CostEstimatesList.tsx       # Saved Cost Estimates list + read-only itemized detail view
+    CostEstimatesList.tsx       # Saved Cost Estimates list + detail view reusing MaterialEstimator as a live, editable calculator (falls back to read-only for pre-roomsJson estimates)
   settings-templates/
     SettingsTemplatesTool.tsx   # Sidebar tab orchestrator: Templates / Settings sub-tabs
     AiProviderSettings.tsx      # AI provider keys/models (admin-only, no modal chrome)

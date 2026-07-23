@@ -12,7 +12,7 @@
  * -----------------------------------------------------------------------------
  */
 
-import type { MaterialEstimate, UnitCostSettings } from "./types";
+import type { MaterialEstimate, Room, UnitCostSettings } from "./types";
 
 /** Lightweight summary for list views — omits the full line-item breakdown. */
 export interface CostEstimateSummary {
@@ -33,12 +33,27 @@ export interface CostEstimateSummary {
 export interface CostEstimateDetail extends CostEstimateSummary {
   materialEstimate: MaterialEstimate;
   settings: UnitCostSettings;
+  /**
+   * Room geometry the estimate was computed from. Present for estimates saved
+   * after roomsJson was added to the schema — lets the Project Management
+   * tab recompute quantities live with the same components.MaterialEstimator
+   * calculator the AI Plan Analyzer uses, instead of a frozen snapshot.
+   * Empty for older estimates, which fall back to a read-only view.
+   */
+  rooms: Room[];
 }
 
 /** POST body for saving a cost estimate to a project (from the PM tab or "Add to Project"). */
 export interface AddCostEstimateToProjectBody {
   fileName: string;
   sourceAnalysisId?: string;
+  settings: UnitCostSettings;
+  materialEstimate: MaterialEstimate;
+  rooms: Room[];
+}
+
+/** PATCH body for updating a saved cost estimate's settings/totals after live edits in the PM tab. */
+export interface UpdateCostEstimateBody {
   settings: UnitCostSettings;
   materialEstimate: MaterialEstimate;
 }

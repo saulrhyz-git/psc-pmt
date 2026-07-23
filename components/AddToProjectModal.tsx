@@ -35,6 +35,11 @@ interface AddToProjectModalProps {
   costEstimate: { settings: UnitCostSettings; materialEstimate: MaterialEstimate } | null;
 }
 
+// Note: room geometry (result.rooms) is sent alongside costEstimate so the
+// Project Management tab's Cost Estimate view can recompute quantities live
+// with the same calculator (components/MaterialEstimator.tsx) rather than
+// only showing a frozen snapshot — see lib/cost-estimate-store.ts's roomsJson.
+
 export default function AddToProjectModal({ open, onClose, result, context, costEstimate }: AddToProjectModalProps) {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
@@ -110,6 +115,7 @@ export default function AddToProjectModal({ open, onClose, result, context, cost
             sourceAnalysisId: payload.analysis.id,
             settings: costEstimate.settings,
             materialEstimate: costEstimate.materialEstimate,
+            rooms: result.rooms,
           };
           const costRes = await fetch(`/api/projects/${selectedProjectId}/cost-estimates`, {
             method: "POST",

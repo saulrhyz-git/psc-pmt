@@ -122,14 +122,28 @@ export default function AppShellPage() {
         <TopBar title={TOOL_LABELS[activeTool]} sessionUser={sessionUser} onLogout={handleLogout} />
 
         <main className="mx-auto w-full max-w-[1600px] flex-1 p-4 sm:p-6 lg:p-8">
-          {activeTool === "plan-analyzer" && (
+          {/*
+            All three tools stay mounted for the lifetime of the session and are
+            merely hidden with CSS, rather than conditionally rendered with `&&`.
+            Conditional rendering would unmount/remount a tool on every sidebar
+            switch, wiping its component state — e.g. a user analyzing a plan,
+            switching to Project Management to confirm "Add to Project" worked,
+            then switching back to find their analysis gone. Keeping them mounted
+            preserves in-progress work (uploaded file, analysis result, cost
+            estimate edits, etc.) until the user explicitly starts over.
+          */}
+          <div className={activeTool === "plan-analyzer" ? undefined : "hidden"}>
             <PlanAnalyzerTool
               canConfigureSettings={sessionUser.role === "admin"}
               onOpenSettings={() => handleSelectTool("settings-templates")}
             />
-          )}
-          {activeTool === "project-management" && <ProjectManagementTool />}
-          {activeTool === "settings-templates" && <SettingsTemplatesTool isAdmin={sessionUser.role === "admin"} />}
+          </div>
+          <div className={activeTool === "project-management" ? undefined : "hidden"}>
+            <ProjectManagementTool />
+          </div>
+          <div className={activeTool === "settings-templates" ? undefined : "hidden"}>
+            <SettingsTemplatesTool isAdmin={sessionUser.role === "admin"} />
+          </div>
         </main>
       </div>
     </div>

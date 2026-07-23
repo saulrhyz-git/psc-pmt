@@ -245,6 +245,12 @@ model ProjectCostEstimate {
   sourceAnalysisId String?  @unique
   settingsJson     Json
   estimateJson     Json
+  // Room geometry the estimate was computed from — lets the Project
+  // Management tab's Cost Estimate view recompute quantities live (same
+  // calculator as the AI Plan Analyzer) instead of only showing a frozen
+  // snapshot. Nullable because estimates saved before this field existed
+  // won't have it; those fall back to a read-only view.
+  roomsJson        Json?
   createdAt        DateTime @default(now())
 
   project        Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)

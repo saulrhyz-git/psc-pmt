@@ -19,8 +19,13 @@
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
-import type { AddCostEstimateToProjectBody, CostEstimateDetail, CostEstimateSummary } from "./cost-estimate-types";
-import type { MaterialEstimate, UnitCostSettings } from "./types";
+import type {
+  AddCostEstimateToProjectBody,
+  CostEstimateDetail,
+  CostEstimateSummary,
+  UpdateCostEstimateBody,
+} from "./cost-estimate-types";
+import type { MaterialEstimate, Room, UnitCostSettings } from "./types";
 
 export interface StoreResult<T> {
   success: boolean;
@@ -63,6 +68,7 @@ function toDetail(row: CostEstimateRow): CostEstimateDetail {
     ...toSummary(row),
     materialEstimate: row.estimateJson as unknown as MaterialEstimate,
     settings: row.settingsJson as unknown as UnitCostSettings,
+    rooms: (row.roomsJson as unknown as Room[] | null) ?? [],
   };
 }
 
@@ -109,6 +115,36 @@ export async function createCostEstimate(
       projectId,
       fileName: body.fileName.trim(),
       sourceAnalysisId: body.sourceAnalysisId || undefined,
+      settingsJson: body.settings as unknown as Prisma.InputJsonValue,
+      estimateJson: body.materialEstimate as unknown as Prisma.InputJsonValue,
+      roomsJson: (body.rooms ?? []) as unknown as Prisma.InputJsonValue,
+    },
+  });
+
+  return ok(toDetail(row));
+}
+
+/**
+ * Updates a saved Cost Estimate's settings/totals after live edits in the
+ * Project Management tab's calculator (see components/pm/CostEstimatesList.tsx).
+ * Room geometry (roomsJson) is immutable once saved — only settings and the
+ * resulting recomputed MaterialEstimate change.
+ */
+export async function updateCostEstimate(
+  projectId: string,
+  id: string,
+  body: UpdateCostEstimateBody
+): Promise<StoreResult<CostEstimateDetail>> {
+  const existing = await prisma.projectCostEstimate.findUnique({ where: { id } });
+  if (!existing || existing.projectId !== projectId) return fail(`Cost estimate "${id}" not found.`);
+  if (!body.settings || typeof body.settings !== "object") return fail("Unit cost settings are required.");
+  if (!body.materialEstimate || !Array.isArray(body.materialEstimate.lineItems)) {
+    return fail("A computed material estimate is required.");
+  }
+
+  const row = await prisma.projectCostEstimate.update({
+    where: { id },
+    data: {
       settingsJson: body.settings as unknown as Prisma.InputJsonValue,
       estimateJson: body.materialEstimate as unknown as Prisma.InputJsonValue,
     },
