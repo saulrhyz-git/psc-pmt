@@ -266,6 +266,7 @@ app/
       [id]/route.ts           # GET/PATCH/DELETE a project (cascades on delete)
       [id]/bundle/route.ts    # GET project + tasks + budget + crew + equipment in one call
       [id]/tasks/route.ts + [taskId]/route.ts       # Task CRUD
+      [id]/issues/route.ts + [issueId]/route.ts     # Issue (punch list/defect/RFI) CRUD — resolvedAt auto-managed server-side
       [id]/budget/route.ts + [lineItemId]/route.ts  # Budget line item CRUD
       [id]/budget/apply-template/route.ts           # POST — bulk-apply a Budget template
       [id]/crew/route.ts + [memberId]/route.ts      # Crew CRUD
@@ -299,7 +300,8 @@ components/
     AddProjectModal.tsx       # New project form
     KpiCards.tsx               # Dashboard KPI strip
     TaskList.tsx                # Searchable/filterable task table
-    GanttChart.tsx              # Custom CSS-based schedule timeline
+    IssueTracker.tsx             # Searchable/filterable issue (punch list/defect/RFI) tracker, modeled on TaskList.tsx
+    GanttChart.tsx              # Custom CSS-based schedule timeline — per-row phase/date/progress labels, "Today" marker
     BudgetTracker.tsx           # Budget vs. spend + phase breakdown + "Apply Template"
     ResourceManagement.tsx      # Crew cards + equipment table
     ExportButton.tsx            # Triggers the Excel export download

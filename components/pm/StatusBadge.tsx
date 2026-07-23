@@ -25,6 +25,10 @@ const STATUS_STYLES: Record<string, string> = {
   "in-use": "bg-sky-100 text-sky-700",
   maintenance: "bg-red-100 text-red-700",
   reserved: "bg-amber-100 text-amber-700",
+  // Issue status ("in-progress" reuses the Task status color above)
+  open: "bg-amber-100 text-amber-700",
+  resolved: "bg-emerald-100 text-emerald-700",
+  closed: "bg-slate-100 text-slate-500",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -41,6 +45,9 @@ const STATUS_LABELS: Record<string, string> = {
   "in-use": "In use",
   maintenance: "Maintenance",
   reserved: "Reserved",
+  open: "Open",
+  resolved: "Resolved",
+  closed: "Closed",
 };
 
 export default function StatusBadge({ status }: { status: string }) {

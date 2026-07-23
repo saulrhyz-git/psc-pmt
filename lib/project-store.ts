@@ -29,6 +29,7 @@ import type {
   BudgetCategory as DbBudgetCategory,
   CrewStatus as DbCrewStatus,
   EquipmentStatus as DbEquipmentStatus,
+  IssueStatus as DbIssueStatus,
   Prisma,
   ProjectStatus as DbProjectStatus,
   TaskPriority as DbTaskPriority,
@@ -40,20 +41,24 @@ import type {
   CreateBudgetLineItemBody,
   CreateCrewMemberBody,
   CreateEquipmentBody,
+  CreateIssueBody,
   CreateProjectBody,
   CreateTaskBody,
   CrewMember,
   CrewStatus,
   Equipment,
   EquipmentStatus,
+  IssueStatus,
   Project,
   ProjectBundle,
+  ProjectIssue,
   ProjectStatus,
   ProjectTask,
   TaskStatus,
   UpdateBudgetLineItemBody,
   UpdateCrewMemberBody,
   UpdateEquipmentBody,
+  UpdateIssueBody,
   UpdateProjectBody,
   UpdateTaskBody,
 } from "./project-types";
@@ -87,6 +92,21 @@ const TASK_STATUS_FROM_DB: Record<DbTaskStatus, TaskStatus> = {
   blocked: "blocked",
   completed: "completed",
 };
+
+const ISSUE_STATUS_TO_DB: Record<IssueStatus, DbIssueStatus> = {
+  open: "open",
+  "in-progress": "in_progress",
+  resolved: "resolved",
+  closed: "closed",
+};
+const ISSUE_STATUS_FROM_DB: Record<DbIssueStatus, IssueStatus> = {
+  open: "open",
+  in_progress: "in-progress",
+  resolved: "resolved",
+  closed: "closed",
+};
+/** Status values that count as "done" — reaching one auto-stamps resolvedAt; leaving one clears it. */
+const ISSUE_RESOLVED_STATUSES: ReadonlySet<IssueStatus> = new Set(["resolved", "closed"]);
 
 const CREW_STATUS_TO_DB: Record<CrewStatus, DbCrewStatus> = {
   active: "active",
@@ -133,6 +153,8 @@ type BudgetLineItemRow = Prisma.BudgetLineItemGetPayload<{}>;
 type CrewMemberRow = Prisma.CrewMemberGetPayload<{}>;
 // eslint-disable-next-line @typescript-eslint/ban-types
 type EquipmentRow = Prisma.EquipmentGetPayload<{}>;
+// eslint-disable-next-line @typescript-eslint/ban-types
+type IssueRow = Prisma.ProjectIssueGetPayload<{}>;
 
 function toProject(row: ProjectRow): Project {
   return {
@@ -165,6 +187,24 @@ function toTask(row: TaskRow): ProjectTask {
     priority: row.priority,
     startDate: row.startDate,
     endDate: row.endDate,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toIssue(row: IssueRow): ProjectIssue {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    title: row.title,
+    description: row.description ?? undefined,
+    phase: row.phase ?? undefined,
+    status: ISSUE_STATUS_FROM_DB[row.status],
+    priority: row.priority,
+    assignee: row.assignee ?? undefined,
+    reportedBy: row.reportedBy ?? undefined,
+    dueDate: row.dueDate ?? undefined,
+    resolvedAt: row.resolvedAt?.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -627,6 +667,96 @@ export async function deleteEquipment(projectId: string, itemId: string): Promis
     return ok(true);
   } catch (err) {
     if (isNotFoundError(err)) return fail(`Equipment "${itemId}" not found.`);
+    throw err;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Issues
+// -----------------------------------------------------------------------------
+
+export async function listIssues(projectId: string): Promise<ProjectIssue[]> {
+  const rows = await prisma.projectIssue.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } });
+  return rows.map(toIssue);
+}
+
+export async function createIssue(projectId: string, body: CreateIssueBody): Promise<StoreResult<ProjectIssue>> {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) return fail(`Project "${projectId}" not found.`);
+  if (!body.title?.trim()) return fail("Issue title is required.");
+
+  const status = body.status ?? "open";
+  const row = await prisma.projectIssue.create({
+    data: {
+      id: randomUUID(),
+      projectId,
+      title: body.title.trim(),
+      description: body.description?.trim() || undefined,
+      phase: body.phase?.trim() || undefined,
+      status: ISSUE_STATUS_TO_DB[status],
+      priority: body.priority ?? "medium",
+      assignee: body.assignee?.trim() || undefined,
+      reportedBy: body.reportedBy?.trim() || undefined,
+      dueDate: body.dueDate || undefined,
+      // An issue can be filed already-resolved/closed (e.g. logging a fixed
+      // item for the record) — stamp resolvedAt at creation time too, not
+      // just on later transitions.
+      resolvedAt: ISSUE_RESOLVED_STATUSES.has(status) ? new Date() : undefined,
+    },
+  });
+
+  return ok(toIssue(row));
+}
+
+export async function updateIssue(
+  projectId: string,
+  issueId: string,
+  body: UpdateIssueBody
+): Promise<StoreResult<ProjectIssue>> {
+  const existing = await prisma.projectIssue.findUnique({ where: { id: issueId } });
+  if (!existing || existing.projectId !== projectId) return fail(`Issue "${issueId}" not found.`);
+
+  // Auto-manage resolvedAt around status transitions rather than trust a
+  // client-supplied value (ProjectIssue.resolvedAt isn't exposed on
+  // UpdateIssueBody at all — see lib/project-types.ts).
+  let resolvedAtUpdate: Date | null | undefined;
+  if (body.status !== undefined) {
+    const wasResolved = ISSUE_RESOLVED_STATUSES.has(ISSUE_STATUS_FROM_DB[existing.status]);
+    const willBeResolved = ISSUE_RESOLVED_STATUSES.has(body.status);
+    if (willBeResolved && !wasResolved) resolvedAtUpdate = new Date();
+    else if (!willBeResolved && wasResolved) resolvedAtUpdate = null;
+  }
+
+  try {
+    const row = await prisma.projectIssue.update({
+      where: { id: issueId },
+      data: {
+        ...(body.title !== undefined && { title: body.title.trim() }),
+        ...(body.description !== undefined && { description: body.description.trim() || null }),
+        ...(body.phase !== undefined && { phase: body.phase.trim() || null }),
+        ...(body.status !== undefined && { status: ISSUE_STATUS_TO_DB[body.status] }),
+        ...(body.priority !== undefined && { priority: body.priority }),
+        ...(body.assignee !== undefined && { assignee: body.assignee.trim() || null }),
+        ...(body.reportedBy !== undefined && { reportedBy: body.reportedBy.trim() || null }),
+        ...(body.dueDate !== undefined && { dueDate: body.dueDate || null }),
+        ...(resolvedAtUpdate !== undefined && { resolvedAt: resolvedAtUpdate }),
+      },
+    });
+    return ok(toIssue(row));
+  } catch (err) {
+    if (isNotFoundError(err)) return fail(`Issue "${issueId}" not found.`);
+    throw err;
+  }
+}
+
+export async function deleteIssue(projectId: string, issueId: string): Promise<StoreResult<true>> {
+  const existing = await prisma.projectIssue.findUnique({ where: { id: issueId }, select: { projectId: true } });
+  if (!existing || existing.projectId !== projectId) return fail(`Issue "${issueId}" not found.`);
+  try {
+    await prisma.projectIssue.delete({ where: { id: issueId } });
+    return ok(true);
+  } catch (err) {
+    if (isNotFoundError(err)) return fail(`Issue "${issueId}" not found.`);
     throw err;
   }
 }

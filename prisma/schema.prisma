@@ -51,6 +51,20 @@ enum BudgetCategory {
   other
 }
 
+enum IssueStatus {
+  open
+  in_progress  @map("in-progress")
+  resolved
+  closed
+}
+
+enum IssuePriority {
+  low
+  medium
+  high
+  critical
+}
+
 enum AnalysisProvider {
   claude
   gemini
@@ -118,6 +132,7 @@ model Project {
   referenceFiles ReferenceFile[]
   planAnalyses   PlanAnalysis[]
   costEstimates  ProjectCostEstimate[]
+  issues         ProjectIssue[]
 }
 
 model Task {
@@ -134,6 +149,31 @@ model Task {
   endDate         String
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// Construction issue/punch-list tracking (defects, RFIs, site problems) for
+// the Project Management tab's "Issues" tab (components/pm/IssueTracker.tsx).
+// Not tied to a specific Task — phase is a free-text tag for the same
+// color-coded grouping Task/BudgetLineItem use, but is optional since not
+// every issue maps cleanly to a construction phase (e.g. site safety).
+model ProjectIssue {
+  id          String        @id
+  projectId   String
+  title       String
+  description String?
+  phase       String?
+  status      IssueStatus   @default(open)
+  priority    IssuePriority @default(medium)
+  assignee    String?
+  reportedBy  String?
+  dueDate     String?
+  // Auto-set by lib/project-store.ts's updateIssue when status transitions to
+  // resolved/closed, and cleared if it's reopened — not settable directly.
+  resolvedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }

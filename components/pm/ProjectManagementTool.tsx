@@ -5,7 +5,7 @@
  * -----------------------------------------------------------------------------
  * Tool #2: Project Management. Top-level orchestrator — owns the project
  * picker, the selected project's data bundle, and the sub-tab navigation
- * (Dashboard / Tasks / Gantt / Budget / Resources). Each sub-view is a
+ * (Dashboard / Tasks / Issues / Gantt / Budget / Resources). Each sub-view is a
  * separate component that receives the bundle slice it needs plus an
  * `onChanged` callback that re-fetches the bundle after any mutation, so
  * KPIs/Gantt/budget totals always reflect the latest edits.
@@ -27,12 +27,23 @@ import StatusBadge from "@/components/pm/StatusBadge";
 import ReferenceFileLibrary from "@/components/pm/ReferenceFileLibrary";
 import PlanAnalysesList from "@/components/pm/PlanAnalysesList";
 import CostEstimatesList from "@/components/pm/CostEstimatesList";
+import IssueTracker from "@/components/pm/IssueTracker";
 
-type PmTab = "dashboard" | "tasks" | "gantt" | "budget" | "cost-estimate" | "resources" | "plan-analyses" | "reference-files";
+type PmTab =
+  | "dashboard"
+  | "tasks"
+  | "issues"
+  | "gantt"
+  | "budget"
+  | "cost-estimate"
+  | "resources"
+  | "plan-analyses"
+  | "reference-files";
 
 const TABS: { key: PmTab; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
   { key: "tasks", label: "Tasks" },
+  { key: "issues", label: "Issues" },
   { key: "gantt", label: "Gantt Timeline" },
   { key: "budget", label: "Budget" },
   { key: "cost-estimate", label: "Cost Estimate" },
@@ -115,7 +126,7 @@ export default function ProjectManagementTool() {
       <div>
         <h1 className="text-lg font-bold text-slate-900">Project Management</h1>
         <p className="text-sm text-slate-500">
-          Manage projects, tasks, schedule, budget, and crew &amp; equipment resources.
+          Manage projects, tasks, issues, schedule, budget, and crew &amp; equipment resources.
         </p>
       </div>
 
@@ -186,6 +197,7 @@ export default function ProjectManagementTool() {
           {activeTab === "tasks" && (
             <TaskList projectId={bundle.project.id} tasks={bundle.tasks} onChanged={handleChanged} />
           )}
+          {activeTab === "issues" && <IssueTracker projectId={bundle.project.id} />}
           {activeTab === "gantt" && <GanttChart tasks={bundle.tasks} />}
           {activeTab === "budget" && (
             <BudgetTracker

@@ -66,26 +66,51 @@ export default function GanttChart({ tasks }: GanttChartProps) {
                 className="pointer-events-none absolute bottom-0 top-0 z-10 w-px bg-red-400"
                 style={{ left: `${todayPercent}%` }}
                 title="Today"
-              />
+              >
+                <span className="absolute -top-[1px] left-1 whitespace-nowrap text-[10px] font-semibold text-red-500">
+                  Today
+                </span>
+              </div>
             )}
             {sortedTasks.map(({ task, leftPercent, widthPercent }) => {
               const color = getPhaseColor(task.phase);
+              // Bars need a little width before the progress% label fits inside them
+              // without overflowing into neighboring bars or the row edge.
+              const labelFitsInsideBar = widthPercent >= 12;
               return (
                 <div key={task.id} className="flex items-center border-b border-slate-100 last:border-b-0">
-                  <div className="w-44 shrink-0 truncate px-2 py-2 text-xs font-medium text-slate-600" title={task.title}>
-                    {task.title}
+                  <div className="w-44 shrink-0 px-2 py-1.5">
+                    <p className="truncate text-xs font-medium text-slate-600" title={task.title}>
+                      {task.title}
+                    </p>
+                    <p className="truncate text-[10px] text-slate-400" title={`${task.phase} · ${task.startDate} → ${task.endDate}`}>
+                      {task.phase} · {task.startDate} → {task.endDate}
+                    </p>
                   </div>
-                  <div className="relative h-8 flex-1 border-l border-slate-100">
+                  <div className="relative h-9 flex-1 border-l border-slate-100">
                     <div
-                      className={["absolute top-1.5 h-5 rounded-md opacity-90", color.bar].join(" ")}
+                      className={["absolute top-1.5 flex h-6 items-center rounded-md opacity-90", color.bar].join(" ")}
                       style={{ left: `${leftPercent}%`, width: `${widthPercent}%` }}
-                      title={`${task.title}: ${task.startDate} → ${task.endDate} (${task.progressPercent}%)`}
+                      title={`${task.title}: ${task.startDate} → ${task.endDate} (${task.progressPercent}% complete)`}
                     >
                       <div
-                        className="h-full rounded-md bg-black/20"
-                        style={{ width: `${100 - task.progressPercent}%`, marginLeft: `${task.progressPercent}%` }}
+                        className="absolute inset-y-0 right-0 rounded-md bg-black/20"
+                        style={{ width: `${100 - task.progressPercent}%` }}
                       />
+                      {labelFitsInsideBar && (
+                        <span className="relative px-1.5 text-[10px] font-semibold leading-none text-white drop-shadow-sm">
+                          {task.progressPercent}%
+                        </span>
+                      )}
                     </div>
+                    {!labelFitsInsideBar && (
+                      <span
+                        className="absolute top-2 whitespace-nowrap text-[10px] font-medium text-slate-500"
+                        style={{ left: `calc(${leftPercent}% + ${widthPercent}% + 4px)` }}
+                      >
+                        {task.progressPercent}%
+                      </span>
+                    )}
                   </div>
                 </div>
               );

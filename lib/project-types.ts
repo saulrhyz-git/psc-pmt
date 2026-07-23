@@ -232,6 +232,57 @@ export interface EquipmentResponseBody {
 }
 
 // -----------------------------------------------------------------------------
+// Issues (punch list / defect / RFI tracking)
+// -----------------------------------------------------------------------------
+
+export type IssueStatus = "open" | "in-progress" | "resolved" | "closed";
+export type IssuePriority = "low" | "medium" | "high" | "critical";
+
+export interface ProjectIssue {
+  id: string;
+  projectId: string;
+  title: string;
+  description?: string;
+  /** Free-text tag for the same phase color-coding Task/BudgetLineItem use. Optional — not every issue maps to a construction phase. */
+  phase?: string;
+  status: IssueStatus;
+  priority: IssuePriority;
+  assignee?: string;
+  /** Who reported the issue (crew member, inspector, client, etc.). */
+  reportedBy?: string;
+  dueDate?: string; // ISO date
+  /** Set automatically when status moves to resolved/closed; cleared if reopened. Not settable directly. */
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateIssueBody {
+  title: string;
+  description?: string;
+  phase?: string;
+  status?: IssueStatus;
+  priority?: IssuePriority;
+  assignee?: string;
+  reportedBy?: string;
+  dueDate?: string;
+}
+
+export type UpdateIssueBody = Partial<CreateIssueBody>;
+
+export interface IssuesListResponseBody {
+  success: boolean;
+  issues?: ProjectIssue[];
+  error?: string;
+}
+
+export interface IssueResponseBody {
+  success: boolean;
+  issue?: ProjectIssue;
+  error?: string;
+}
+
+// -----------------------------------------------------------------------------
 // Aggregate bundle (used by the export route and by the dashboard KPI calc)
 // -----------------------------------------------------------------------------
 
