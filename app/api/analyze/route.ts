@@ -37,7 +37,12 @@ import { requireSession } from "@/lib/auth";
 import type { AnalyzeRequestBody, AnalyzeResponseBody, SupportedInputMimeType, VisionProvider } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// Only enforced on platforms that read this export (e.g. Vercel) — ignored by
+// a plain `next start` Node server, where the bottleneck is more likely a
+// reverse proxy (nginx, Cloudflare, etc.) timing out the request before this
+// function returns. Raised from 60s because Kimi (large-context vision model)
+// can take noticeably longer than Claude/Gemini on complex plans.
+export const maxDuration = 120;
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20MB
 const SUPPORTED_MIME_TYPES: SupportedInputMimeType[] = [

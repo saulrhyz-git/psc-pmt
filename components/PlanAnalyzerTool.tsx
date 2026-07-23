@@ -175,7 +175,23 @@ export default function PlanAnalyzerTool({ canConfigureSettings, onOpenSettings 
         }),
       });
 
-      const payload = (await response.json()) as AnalyzeResponseBody;
+      let payload: AnalyzeResponseBody;
+      try {
+        payload = (await response.json()) as AnalyzeResponseBody;
+      } catch {
+        // The server (or a reverse proxy/gateway in front of it) returned a
+        // non-JSON body — almost always an HTML error page from a timeout,
+        // since /api/analyze always responds with JSON itself (see
+        // app/api/analyze/route.ts's handleError). Kimi in particular can take
+        // noticeably longer than Claude/Gemini on complex plans, which is
+        // enough to trip a reverse proxy's default read timeout (commonly
+        // 60s on nginx, or ~100s on Cloudflare) before the analysis finishes.
+        throw new Error(
+          `The server didn't return a valid response${
+            !response.ok ? ` (HTTP ${response.status})` : ""
+          }. This usually means a reverse proxy or gateway timed out before the analysis finished — ${VISION_PROVIDERS[provider].label} can take longer than other providers on complex plans. Try again, or ask your administrator to increase the server's proxy timeout.`
+        );
+      }
 
       if (!response.ok || !payload.success || !payload.result) {
         throw new Error(payload.error || `Analysis failed with status ${response.status}.`);
