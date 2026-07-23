@@ -78,12 +78,10 @@ model AiSettings {
   claudeModel  String?
 }
 
-/**
- * Admin-configured default unit costs for the Material/Cost Estimator (see
- * lib/cost-settings.ts). Singleton row (id = 1), same pattern as AiSettings.
- * Any field left null falls back to the hardcoded DEFAULT_UNIT_COST_SETTINGS
- * in lib/estimate-utils.ts.
- */
+// Admin-configured default unit costs for the Material/Cost Estimator (see
+// lib/cost-settings.ts). Singleton row (id = 1), same pattern as AiSettings.
+// Any field left null falls back to the hardcoded DEFAULT_UNIT_COST_SETTINGS
+// in lib/estimate-utils.ts.
 model CostEstimateDefaults {
   id                 Int     @id
   paintPerSqM        Float?
@@ -231,14 +229,12 @@ model PlanAnalysis {
   costEstimate  ProjectCostEstimate?
 }
 
-/**
- * A saved Material/Cost Estimate for a project — either created directly from
- * the Project Management "Cost Estimate" tab or pushed automatically when the
- * AI Plan Analyzer's "Add to Project" action includes a computed estimate
- * (see lib/cost-estimate-store.ts). `sourceAnalysisId` links back to the
- * PlanAnalysis it came from, when applicable; onDelete: SetNull so deleting
- * the analysis doesn't take the estimate with it.
- */
+// A saved Material/Cost Estimate for a project — either created directly from
+// the Project Management "Cost Estimate" tab or pushed automatically when the
+// AI Plan Analyzer's "Add to Project" action includes a computed estimate
+// (see lib/cost-estimate-store.ts). `sourceAnalysisId` links back to the
+// PlanAnalysis it came from, when applicable; onDelete: SetNull so deleting
+// the analysis doesn't take the estimate with it.
 model ProjectCostEstimate {
   id               String   @id
   projectId        String
