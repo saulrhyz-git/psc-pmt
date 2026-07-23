@@ -285,7 +285,7 @@ app/
 components/
   Sidebar.tsx                # Collapsible nav: Plan Analyzer / Project Management / Settings & Templates
   PlanAnalyzerTool.tsx        # Tool #1's full UI (extracted from app/page.tsx)
-  AddToProjectModal.tsx       # "Add to Project" flow: picks a project, POSTs the result
+  AddToProjectModal.tsx       # "Add to Project" flow: picks a project (or "+ New Project", which launches pm/AddProjectModal.tsx and auto-saves once created), POSTs the result
   UploadZone.tsx            # Drag-and-drop upload
   ProviderSelector.tsx      # Claude vs. Gemini vs. Kimi picker (free-tier note for Gemini)
   UserManagement.tsx          # Admin-only: enroll/remove students, list users

@@ -13,10 +13,22 @@
  * providers so results are shaped identically regardless of which one a user
  * picks.
  *
- * We force the model to call a single "function" (OpenAI/Kimi's
- * structured-output mechanism via `tools` + `tool_choice`) rather than asking
- * for prose JSON — the same reliability rationale as Claude's forced
- * `tool_choice` and Gemini's `responseSchema`.
+ * Structured output via `tools` + `tool_choice`, same reliability rationale
+ * as Claude's forced `tool_choice` and Gemini's `responseSchema` — but with
+ * one Kimi-specific wrinkle confirmed against Moonshot's docs
+ * (https://platform.kimi.ai/docs/guide/use-tool-choice): K3 always runs with
+ * thinking enabled, and forcing a *specific* named tool
+ * (`tool_choice: { type: "function", function: { name } }`) is incompatible
+ * with thinking — the API rejects it with a 400
+ * (`tool_choice 'specified' is incompatible with thinking enabled`). So we
+ * use `tool_choice: "auto"` instead (the documented default) and rely on a
+ * single declared tool + explicit prompt instructions to get the model to
+ * call it — see extractErrorDetail's caller below for what happens if it
+ * doesn't.
+ *
+ * temperature is also fixed by the model service at 1.0 for K3 (per the same
+ * docs: "temperature=1.0 ... are fixed"); we still send it explicitly for
+ * clarity rather than omit it, since sending the fixed value is a no-op.
  *
  * Kimi K3 (the current flagship as of mid-2026) has native image/vision
  * understanding built in — no separate vision-only model needed.
@@ -76,7 +88,9 @@ export async function analyzePlanImageWithKimi(input: AnalyzePlanImageWithKimiIn
 
   const requestBody = {
     model,
-    temperature: 0.2,
+    // Fixed at 1.0 by the model service regardless of what's sent (see
+    // header comment) — sent explicitly rather than omitted for clarity.
+    temperature: 1,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       {
@@ -84,7 +98,17 @@ export async function analyzePlanImageWithKimi(input: AnalyzePlanImageWithKimiIn
         content: [
           {
             type: "text",
-            text: buildUserPrompt(input.fileName, input.knownScale, input.referenceMeasurementM, input.context),
+            // SYSTEM_PROMPT (shared with Claude/Gemini) tells the model to
+            // "respond with ONLY the JSON object" — correct for those two
+            // providers, whose structured-output mechanisms are independent
+            // of message content. But with Kimi's tool_choice: "auto" (see
+            // header comment for why it can't be forced), that phrasing
+            // could lead the model to paste JSON into the reply text instead
+            // of actually calling extract_plan_data. This line overrides
+            // that for Kimi specifically, appended after the shared prompt.
+            text:
+              buildUserPrompt(input.fileName, input.knownScale, input.referenceMeasurementM, input.context) +
+              `\n\nCall the ${EXTRACT_FUNCTION_NAME} function with your complete answer as its arguments — do not reply with plain text or JSON in the message content.`,
           },
           {
             type: "image_url",
@@ -104,7 +128,12 @@ export async function analyzePlanImageWithKimi(input: AnalyzePlanImageWithKimiIn
         },
       },
     ],
-    tool_choice: { type: "function", function: { name: EXTRACT_FUNCTION_NAME } },
+    // NOT a forced-specific-function tool_choice — K3 always thinks, and
+    // forcing a named tool 400s when thinking is enabled (see header
+    // comment). "auto" is the documented default; the single declared tool
+    // plus SYSTEM_PROMPT/buildUserPrompt's instructions are what actually
+    // get it called reliably.
+    tool_choice: "auto",
   };
 
   let response: Response;
