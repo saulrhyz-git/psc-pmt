@@ -389,7 +389,7 @@ export interface PlanAnalysisResult {
  * Gemini is included specifically so cost-sensitive users (e.g. students) can
  * run the tool on Google's free tier instead of a paid Anthropic key.
  */
-export type VisionProvider = "claude" | "gemini";
+export type VisionProvider = "claude" | "gemini" | "kimi";
 
 export interface VisionProviderInfo {
   id: VisionProvider;
@@ -455,6 +455,8 @@ export interface StoredAiSettings {
   geminiModel?: string;
   claudeApiKey?: string;
   claudeModel?: string;
+  kimiApiKey?: string;
+  kimiModel?: string;
 }
 
 /** Where a currently-active setting value came from, surfaced in the Settings UI. */
@@ -479,6 +481,7 @@ export interface AiSettingsResponseBody {
   success: boolean;
   gemini?: ProviderSettingsStatus;
   claude?: ProviderSettingsStatus;
+  kimi?: ProviderSettingsStatus;
   error?: string;
 }
 

@@ -54,6 +54,7 @@ enum BudgetCategory {
 enum AnalysisProvider {
   claude
   gemini
+  kimi
 }
 
 model User {
@@ -76,6 +77,8 @@ model AiSettings {
   geminiModel  String?
   claudeApiKey String?
   claudeModel  String?
+  kimiApiKey   String?
+  kimiModel    String?
 }
 
 // Admin-configured default unit costs for the Material/Cost Estimator (see

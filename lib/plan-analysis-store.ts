@@ -99,7 +99,8 @@ export async function createPlanAnalysis(
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
   if (!project) return fail(`Project "${projectId}" not found.`);
   if (!body.fileName?.trim()) return fail("File name is required.");
-  if (body.provider !== "claude" && body.provider !== "gemini") return fail("A valid provider (claude or gemini) is required.");
+  if (body.provider !== "claude" && body.provider !== "gemini" && body.provider !== "kimi")
+    return fail("A valid provider (claude, gemini, or kimi) is required.");
   if (!body.result || typeof body.result !== "object") return fail("Analysis result is required.");
 
   const now = new Date();

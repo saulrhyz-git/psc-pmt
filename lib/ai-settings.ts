@@ -12,9 +12,9 @@
  * keys/models from the UI takes effect immediately on the next request — no
  * restart required. If nothing has been saved via the UI, everything falls
  * back to the same environment variables (`GEMINI_API_KEY`,
- * `ANTHROPIC_API_KEY`, `GEMINI_VISION_MODEL`, `CLAUDE_VISION_MODEL`) used
- * before this feature existed, so existing `.env.local` setups keep working
- * unchanged.
+ * `ANTHROPIC_API_KEY`, `KIMI_API_KEY`, `GEMINI_VISION_MODEL`,
+ * `CLAUDE_VISION_MODEL`, `KIMI_VISION_MODEL`) used before this feature
+ * existed, so existing `.env.local` setups keep working unchanged.
  *
  * Server-only: this file uses the Prisma client (real TCP connections to
  * Postgres) and must never be imported from a Client Component.
@@ -28,6 +28,7 @@ import type { ProviderSettingsStatus, ResolvedSetting, StoredAiSettings } from "
 
 const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash";
 const DEFAULT_CLAUDE_MODEL = "claude-3-5-sonnet-20241022";
+const DEFAULT_KIMI_MODEL = "kimi-k3";
 
 // -----------------------------------------------------------------------------
 // Low-level read/write
@@ -47,6 +48,8 @@ async function readStoredSettings(): Promise<StoredAiSettings> {
   if (row.geminiModel) settings.geminiModel = row.geminiModel;
   if (row.claudeApiKey) settings.claudeApiKey = row.claudeApiKey;
   if (row.claudeModel) settings.claudeModel = row.claudeModel;
+  if (row.kimiApiKey) settings.kimiApiKey = row.kimiApiKey;
+  if (row.kimiModel) settings.kimiModel = row.kimiModel;
   return settings;
 }
 
@@ -76,6 +79,8 @@ export async function updateStoredSettings(update: Partial<StoredAiSettings>): P
   if (row.geminiModel) next.geminiModel = row.geminiModel;
   if (row.claudeApiKey) next.claudeApiKey = row.claudeApiKey;
   if (row.claudeModel) next.claudeModel = row.claudeModel;
+  if (row.kimiApiKey) next.kimiApiKey = row.kimiApiKey;
+  if (row.kimiModel) next.kimiModel = row.kimiModel;
   return next;
 }
 
@@ -111,6 +116,19 @@ function resolveClaudeModel(stored: StoredAiSettings): ResolvedSetting {
   return { value: DEFAULT_CLAUDE_MODEL, source: "default" };
 }
 
+function resolveKimiApiKey(stored: StoredAiSettings): ResolvedSetting {
+  if (stored.kimiApiKey) return { value: stored.kimiApiKey, source: "settings" };
+  const envValue = process.env.KIMI_API_KEY;
+  if (envValue) return { value: envValue, source: "env" };
+  return { value: undefined, source: "none" };
+}
+
+function resolveKimiModel(stored: StoredAiSettings): ResolvedSetting {
+  if (stored.kimiModel) return { value: stored.kimiModel, source: "settings" };
+  if (process.env.KIMI_VISION_MODEL) return { value: process.env.KIMI_VISION_MODEL, source: "env" };
+  return { value: DEFAULT_KIMI_MODEL, source: "default" };
+}
+
 export async function getGeminiApiKey(): Promise<ResolvedSetting> {
   return resolveGeminiApiKey(await readStoredSettings());
 }
@@ -127,6 +145,14 @@ export async function getClaudeModel(): Promise<ResolvedSetting> {
   return resolveClaudeModel(await readStoredSettings());
 }
 
+export async function getKimiApiKey(): Promise<ResolvedSetting> {
+  return resolveKimiApiKey(await readStoredSettings());
+}
+
+export async function getKimiModel(): Promise<ResolvedSetting> {
+  return resolveKimiModel(await readStoredSettings());
+}
+
 // -----------------------------------------------------------------------------
 // Client-safe status snapshot (never includes raw secret values)
 // -----------------------------------------------------------------------------
@@ -138,12 +164,18 @@ function maskSecret(secret: string): string {
 }
 
 /** Builds the full status snapshot returned by GET /api/settings — safe to send to the client. */
-export async function getAiSettingsStatus(): Promise<{ gemini: ProviderSettingsStatus; claude: ProviderSettingsStatus }> {
+export async function getAiSettingsStatus(): Promise<{
+  gemini: ProviderSettingsStatus;
+  claude: ProviderSettingsStatus;
+  kimi: ProviderSettingsStatus;
+}> {
   const stored = await readStoredSettings();
   const geminiKey = resolveGeminiApiKey(stored);
   const geminiModel = resolveGeminiModel(stored);
   const claudeKey = resolveClaudeApiKey(stored);
   const claudeModel = resolveClaudeModel(stored);
+  const kimiKey = resolveKimiApiKey(stored);
+  const kimiModel = resolveKimiModel(stored);
 
   return {
     gemini: {
@@ -160,7 +192,14 @@ export async function getAiSettingsStatus(): Promise<{ gemini: ProviderSettingsS
       model: claudeModel.value ?? DEFAULT_CLAUDE_MODEL,
       modelSource: claudeModel.source,
     },
+    kimi: {
+      configured: !!kimiKey.value,
+      keySource: kimiKey.source,
+      maskedKey: kimiKey.value ? maskSecret(kimiKey.value) : undefined,
+      model: kimiModel.value ?? DEFAULT_KIMI_MODEL,
+      modelSource: kimiModel.source,
+    },
   };
 }
 
-export { DEFAULT_GEMINI_MODEL, DEFAULT_CLAUDE_MODEL };
+export { DEFAULT_GEMINI_MODEL, DEFAULT_CLAUDE_MODEL, DEFAULT_KIMI_MODEL };

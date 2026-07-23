@@ -31,14 +31,17 @@ Two more inputs/outputs sit around the core analysis:
 ## Stack
 
 Next.js 14 (App Router) + TypeScript + Tailwind CSS + lucide-react. Vision
-extraction is provider-agnostic — pick **Claude** or **Gemini** per request
-from the UI:
+extraction is provider-agnostic — pick **Claude**, **Gemini**, or **Kimi**
+per request from the UI:
 
 - **Claude 3.5 Sonnet** via the Anthropic SDK's tool-use / JSON schema mode.
 - **Google Gemini** (`gemini-3.5-flash` by default) via `@google/genai`'s
   `responseSchema` / `responseMimeType: "application/json"` structured-output mode.
+- **Kimi K3** (Moonshot AI) via a plain `fetch()` call to its
+  OpenAI-Chat-Completions-compatible API, using forced function-calling for
+  structured output. No extra SDK dependency — see `lib/kimi-vision.ts`.
 
-## Why two providers — a note for classroom / student use
+## Why multiple providers — a note for classroom / student use
 
 This tool is built so a class of students can use it **without anyone paying
 for Anthropic tokens**. Google's Gemini API has a genuinely free tier (Flash
@@ -52,13 +55,13 @@ credit card required:
 
 Free-tier rate limits change over time and aren't worth hardcoding into docs —
 check your live quota at https://aistudio.google.com/rate-limit if you hit a
-rate-limit error. If a student wants to compare results, Claude remains
-available as the second option for anyone with an Anthropic key, but it's
+rate-limit error. If a student wants to compare results, Claude and Kimi
+remain available as paid options for anyone with an API key, but both are
 pay-as-you-go with no free tier.
 
-Both providers share the exact same extraction prompt and JSON schema
+All three providers share the exact same extraction prompt and JSON schema
 (`lib/plan-extraction-schema.ts`) and feed the same deterministic measurement
-math, so results are directly comparable between the two.
+math, so results are directly comparable across all of them.
 
 ## Access control (login required)
 
@@ -129,18 +132,18 @@ then configure API keys two ways:
 
 1. **In-app (recommended for students)** — open the **Settings & Templates**
    tab in the sidebar (or "Configure API keys & models" under the provider
-   picker on the Plan Analyzer tab), paste a Gemini and/or Claude key under
-   its **Settings** sub-tab, and save. This writes to the `ai_settings` table
-   in Postgres and takes effect immediately on your next analysis — no
+   picker on the Plan Analyzer tab), paste a Gemini, Claude, and/or Kimi key
+   under its **Settings** sub-tab, and save. This writes to the `ai_settings`
+   table in Postgres and takes effect immediately on your next analysis — no
    restart, no editing config files by hand.
-2. **Environment variables** — set `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` in
-   `.env.local`. Useful as a fallback, or for deployed environments where you'd
-   rather not put provider keys in the database.
+2. **Environment variables** — set `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` /
+   `KIMI_API_KEY` in `.env.local`. Useful as a fallback, or for deployed
+   environments where you'd rather not put provider keys in the database.
 
 If both are set, the in-app settings win. Model overrides
-(`GEMINI_VISION_MODEL` / `CLAUDE_VISION_MODEL`) work the same way and can also
-be changed from the Settings sub-tab. (The AI Providers and Users sub-tab
-content is admin-only — see "Access control" above.)
+(`GEMINI_VISION_MODEL` / `CLAUDE_VISION_MODEL` / `KIMI_VISION_MODEL`) work the
+same way and can also be changed from the Settings sub-tab. (The AI Providers
+and Users sub-tab content is admin-only — see "Access control" above.)
 
 ### PDF support
 
@@ -284,7 +287,7 @@ components/
   PlanAnalyzerTool.tsx        # Tool #1's full UI (extracted from app/page.tsx)
   AddToProjectModal.tsx       # "Add to Project" flow: picks a project, POSTs the result
   UploadZone.tsx            # Drag-and-drop upload
-  ProviderSelector.tsx      # Claude vs. Gemini picker (free-tier note for Gemini)
+  ProviderSelector.tsx      # Claude vs. Gemini vs. Kimi picker (free-tier note for Gemini)
   UserManagement.tsx          # Admin-only: enroll/remove students, list users
   PlanViewer.tsx             # Split-screen original vs. redrawn artifact
   SVGPlanRenderer.tsx        # Interactive SVG plan: pan/zoom, layer toggles, room highlighting
@@ -314,7 +317,8 @@ lib/
   plan-extraction-schema.ts  # Shared prompt, JSON schema, and post-processing (provider-agnostic)
   claude-vision.ts            # Anthropic-specific API call mechanics
   gemini-vision.ts            # Gemini-specific API call mechanics
-  vision-provider.ts          # Server-side dispatcher: routes to claude-vision or gemini-vision
+  kimi-vision.ts               # Moonshot AI (Kimi) API call mechanics — plain fetch(), OpenAI-compatible
+  vision-provider.ts          # Server-side dispatcher: routes to claude-vision, gemini-vision, or kimi-vision
   vision-provider-metadata.ts # Client-safe provider labels/descriptions (no SDK imports)
   prisma.ts                    # Shared PrismaClient singleton (dev-mode hot-reload safe)
   ai-settings.ts               # In-app settings store (Postgres) with env-var fallback
@@ -341,30 +345,36 @@ lib/
 
 ## Architecture notes
 
-- **Deterministic math, not model math.** Both providers only extract raw
+- **Deterministic math, not model math.** All providers only extract raw
   geometry (room polygons, wall segments, scale calibration); every
   area/perimeter/cost number is computed in plain TypeScript
   (`lib/measurement-utils.ts`, `lib/estimate-utils.ts`), so results are
   consistent and auditable regardless of which model produced the extraction.
-- **One shared schema, two providers.** `lib/plan-extraction-schema.ts` holds
+- **One shared schema, three providers.** `lib/plan-extraction-schema.ts` holds
   the system prompt, the JSON schema, and the post-processing pipeline.
   `lib/claude-vision.ts` wraps it in an Anthropic tool call (forced via
   `tool_choice`); `lib/gemini-vision.ts` wraps it in a Gemini
-  `responseSchema` structured-output call. Both return an identically-shaped
-  `PlanAnalysisResult`, stamped with `provider: "claude" | "gemini"` so the UI
-  can show which one ran.
+  `responseSchema` structured-output call; `lib/kimi-vision.ts` wraps it in a
+  forced OpenAI-style function call over a plain `fetch()` to Moonshot's
+  Chat-Completions-compatible API. All three return an identically-shaped
+  `PlanAnalysisResult`, stamped with `provider: "claude" | "gemini" | "kimi"`
+  so the UI can show which one ran.
 - **Client/server code separation.** `lib/estimate-utils.ts` and
   `lib/vision-provider-metadata.ts` are intentionally dependency-free of both
   `next/server` and the Anthropic/Google SDKs, so they're safe to import
   directly into Client Components (`MaterialEstimator.tsx`,
   `ProviderSelector.tsx`) without bundling server-only code into the browser.
-  `lib/vision-provider.ts`, `lib/claude-vision.ts`, and `lib/gemini-vision.ts`
-  are server-only and must never be imported from a `"use client"` file.
-- **Adding a third provider.** Implement `analyzePlanImageWith<X>` in a new
+  `lib/vision-provider.ts`, `lib/claude-vision.ts`, `lib/gemini-vision.ts`, and
+  `lib/kimi-vision.ts` are server-only and must never be imported from a
+  `"use client"` file.
+- **Adding a fourth provider.** Implement `analyzePlanImageWith<X>` in a new
   `lib/<x>-vision.ts` that imports the shared schema/prompt/post-processing
   from `lib/plan-extraction-schema.ts`, add a case to the switch in
-  `lib/vision-provider.ts`, and add an entry to
-  `lib/vision-provider-metadata.ts`. No other files need to change.
+  `lib/vision-provider.ts`, add an entry to `lib/vision-provider-metadata.ts`,
+  extend `VisionProvider` in `lib/types.ts`, and add the key/model fields to
+  `lib/ai-settings.ts` + the `AiSettings` Prisma model + `AiProviderSettings.tsx`
+  (see `lib/kimi-vision.ts` for a from-scratch, dependency-free example using
+  a plain `fetch()` instead of an SDK).
 - **In-app settings, no restart needed.** `lib/ai-settings.ts` resolves each
   API key/model fresh on every request (settings file → env var → built-in
   default) rather than reading `process.env` once at module load, and

@@ -76,7 +76,14 @@ export async function POST(req: NextRequest): Promise<NextResponse<AiSettingsRes
   }
 }
 
-const ALLOWED_KEYS = new Set(["geminiApiKey", "geminiModel", "claudeApiKey", "claudeModel"]);
+const ALLOWED_KEYS = new Set([
+  "geminiApiKey",
+  "geminiModel",
+  "claudeApiKey",
+  "claudeModel",
+  "kimiApiKey",
+  "kimiModel",
+]);
 
 function validateBody(body: AiSettingsUpdateBody | undefined): string | null {
   if (!body || typeof body !== "object") return "Missing request body.";

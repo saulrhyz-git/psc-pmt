@@ -4,9 +4,10 @@
  * components/ProviderSelector.tsx
  * -----------------------------------------------------------------------------
  * Lets the user pick which AI vision backend analyzes their plan: Gemini
- * (free tier, recommended for students/no-budget use) or Claude (paid,
- * typically stronger on messy hand sketches). Purely a presentation +
- * selection component — it only imports the dependency-free metadata module
+ * (free tier, recommended for students/no-budget use), Claude (paid,
+ * typically stronger on messy hand sketches), or Kimi (paid, native vision,
+ * very large context window). Purely a presentation + selection component —
+ * it only imports the dependency-free metadata module
  * (lib/vision-provider-metadata.ts), never the SDK-backed lib/claude-vision.ts
  * or lib/gemini-vision.ts, so no server-only code leaks into the client bundle.
  * -----------------------------------------------------------------------------
@@ -26,7 +27,7 @@ export default function ProviderSelector({ value, onChange, disabled }: Provider
   return (
     <div className="flex flex-col gap-2">
       <span className="text-xs font-medium text-slate-500">AI Provider</span>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {VISION_PROVIDER_ORDER.map((id) => {
           const info = VISION_PROVIDERS[id];
           const selected = value === id;

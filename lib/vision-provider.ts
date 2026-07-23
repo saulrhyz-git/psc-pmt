@@ -16,6 +16,7 @@
 import type { PlanAnalysisResult, VisionProvider } from "./types";
 import { analyzePlanImage } from "./claude-vision";
 import { analyzePlanImageWithGemini } from "./gemini-vision";
+import { analyzePlanImageWithKimi } from "./kimi-vision";
 import { VisionExtractionError } from "./plan-extraction-schema";
 
 // Re-exported so server-side callers (e.g. this file's own error messages,
@@ -51,6 +52,8 @@ export async function analyzePlanImageWithProvider(
       return analyzePlanImage(input);
     case "gemini":
       return analyzePlanImageWithGemini(input);
+    case "kimi":
+      return analyzePlanImageWithKimi(input);
     default: {
       const _exhaustive: never = provider;
       throw new VisionExtractionError(`Unknown vision provider: ${String(_exhaustive)}`);

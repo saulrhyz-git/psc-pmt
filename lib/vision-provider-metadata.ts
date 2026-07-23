@@ -29,7 +29,15 @@ export const VISION_PROVIDERS: Record<VisionProvider, VisionProviderInfo> = {
     requiredEnvVar: "ANTHROPIC_API_KEY",
     getApiKeyUrl: "https://console.anthropic.com/settings/keys",
   },
+  kimi: {
+    id: "kimi",
+    label: "Kimi (Moonshot AI)",
+    description: "Moonshot AI's Kimi K3 — native image understanding, very large context window. Pay-as-you-go, no free tier.",
+    costNote: "Paid API key required",
+    requiredEnvVar: "KIMI_API_KEY",
+    getApiKeyUrl: "https://platform.moonshot.ai/console/api-keys",
+  },
 };
 
 /** Ordered list for rendering (free/student-friendly option shown first). */
-export const VISION_PROVIDER_ORDER: VisionProvider[] = ["gemini", "claude"];
+export const VISION_PROVIDER_ORDER: VisionProvider[] = ["gemini", "claude", "kimi"];

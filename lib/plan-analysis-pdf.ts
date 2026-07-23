@@ -15,22 +15,23 @@
  */
 
 import PDFDocument from "pdfkit";
-import type { PlanAnalysisResult } from "./types";
+import type { PlanAnalysisResult, VisionProvider } from "./types";
 import { formatDimension, formatMetersCentimeters } from "./measurement-utils";
 import { formatCurrency } from "./currency-utils";
 
 export interface PlanAnalysisPdfInput {
   projectName: string;
   fileName: string;
-  provider: "claude" | "gemini";
+  provider: VisionProvider;
   context?: string;
   createdAt: string;
   result: PlanAnalysisResult;
 }
 
-const PROVIDER_LABELS: Record<"claude" | "gemini", string> = {
+const PROVIDER_LABELS: Record<VisionProvider, string> = {
   claude: "Claude",
   gemini: "Google Gemini",
+  kimi: "Kimi (Moonshot AI)",
 };
 
 /** Builds the PDF report and resolves with its bytes as a Buffer. */

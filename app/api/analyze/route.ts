@@ -46,7 +46,7 @@ const SUPPORTED_MIME_TYPES: SupportedInputMimeType[] = [
   "image/webp",
   "application/pdf",
 ];
-const SUPPORTED_PROVIDERS: VisionProvider[] = ["claude", "gemini"];
+const SUPPORTED_PROVIDERS: VisionProvider[] = ["claude", "gemini", "kimi"];
 
 export async function POST(req: NextRequest): Promise<NextResponse<AnalyzeResponseBody>> {
   // middleware.ts already blocks requests with no session cookie at all, but

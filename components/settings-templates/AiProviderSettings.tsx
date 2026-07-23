@@ -31,8 +31,11 @@ interface FormState {
   geminiModel: string;
   claudeApiKey: string;
   claudeModel: string;
+  kimiApiKey: string;
+  kimiModel: string;
   clearGeminiKey: boolean;
   clearClaudeKey: boolean;
+  clearKimiKey: boolean;
 }
 
 const EMPTY_FORM: FormState = {
@@ -40,8 +43,11 @@ const EMPTY_FORM: FormState = {
   geminiModel: "",
   claudeApiKey: "",
   claudeModel: "",
+  kimiApiKey: "",
+  kimiModel: "",
   clearGeminiKey: false,
   clearClaudeKey: false,
+  clearKimiKey: false,
 };
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -52,9 +58,11 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 export default function AiProviderSettings() {
-  const [status, setStatus] = useState<{ gemini: ProviderSettingsStatus; claude: ProviderSettingsStatus } | null>(
-    null
-  );
+  const [status, setStatus] = useState<{
+    gemini: ProviderSettingsStatus;
+    claude: ProviderSettingsStatus;
+    kimi: ProviderSettingsStatus;
+  } | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -62,6 +70,7 @@ export default function AiProviderSettings() {
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [showClaudeKey, setShowClaudeKey] = useState(false);
+  const [showKimiKey, setShowKimiKey] = useState(false);
 
   const fetchStatus = useCallback(async () => {
     setLoading(true);
@@ -69,14 +78,15 @@ export default function AiProviderSettings() {
     try {
       const res = await fetch("/api/settings");
       const payload = (await res.json()) as AiSettingsResponseBody;
-      if (!res.ok || !payload.success || !payload.gemini || !payload.claude) {
+      if (!res.ok || !payload.success || !payload.gemini || !payload.claude || !payload.kimi) {
         throw new Error(payload.error || "Failed to load current settings.");
       }
-      setStatus({ gemini: payload.gemini, claude: payload.claude });
+      setStatus({ gemini: payload.gemini, claude: payload.claude, kimi: payload.kimi });
       setForm((prev) => ({
         ...prev,
         geminiModel: payload.gemini!.model,
         claudeModel: payload.claude!.model,
+        kimiModel: payload.kimi!.model,
       }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load current settings.");
@@ -101,8 +111,12 @@ export default function AiProviderSettings() {
     if (form.clearClaudeKey) update.claudeApiKey = "";
     else if (form.claudeApiKey.trim()) update.claudeApiKey = form.claudeApiKey.trim();
 
+    if (form.clearKimiKey) update.kimiApiKey = "";
+    else if (form.kimiApiKey.trim()) update.kimiApiKey = form.kimiApiKey.trim();
+
     if (status && form.geminiModel.trim() !== status.gemini.model) update.geminiModel = form.geminiModel.trim();
     if (status && form.claudeModel.trim() !== status.claude.model) update.claudeModel = form.claudeModel.trim();
+    if (status && form.kimiModel.trim() !== status.kimi.model) update.kimiModel = form.kimiModel.trim();
 
     try {
       const res = await fetch("/api/settings", {
@@ -111,17 +125,20 @@ export default function AiProviderSettings() {
         body: JSON.stringify(update),
       });
       const payload = (await res.json()) as AiSettingsResponseBody;
-      if (!res.ok || !payload.success || !payload.gemini || !payload.claude) {
+      if (!res.ok || !payload.success || !payload.gemini || !payload.claude || !payload.kimi) {
         throw new Error(payload.error || "Failed to save settings.");
       }
-      setStatus({ gemini: payload.gemini, claude: payload.claude });
+      setStatus({ gemini: payload.gemini, claude: payload.claude, kimi: payload.kimi });
       setForm({
         geminiApiKey: "",
         geminiModel: payload.gemini.model,
         claudeApiKey: "",
         claudeModel: payload.claude.model,
+        kimiApiKey: "",
+        kimiModel: payload.kimi.model,
         clearGeminiKey: false,
         clearClaudeKey: false,
+        clearKimiKey: false,
       });
       setSavedAt(Date.now());
     } catch (err) {
@@ -172,6 +189,24 @@ export default function AiProviderSettings() {
             modelValue={form.claudeModel}
             onModelChange={(v) => setForm((f) => ({ ...f, claudeModel: v }))}
             modelPlaceholder="claude-3-5-sonnet-20241022"
+          />
+
+          <div className="border-t border-slate-100" />
+
+          <ProviderSection
+            title="Kimi (Moonshot AI)"
+            subtitle="Native image understanding, very large context window. Pay-as-you-go, no free tier."
+            getKeyUrl="https://platform.moonshot.ai/console/api-keys"
+            statusInfo={status?.kimi}
+            apiKeyValue={form.kimiApiKey}
+            onApiKeyChange={(v) => setForm((f) => ({ ...f, kimiApiKey: v, clearKimiKey: false }))}
+            showKey={showKimiKey}
+            onToggleShowKey={() => setShowKimiKey((s) => !s)}
+            clearing={form.clearKimiKey}
+            onToggleClear={() => setForm((f) => ({ ...f, clearKimiKey: !f.clearKimiKey, kimiApiKey: "" }))}
+            modelValue={form.kimiModel}
+            onModelChange={(v) => setForm((f) => ({ ...f, kimiModel: v }))}
+            modelPlaceholder="kimi-k3"
           />
         </div>
       )}

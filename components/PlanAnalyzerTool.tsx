@@ -100,7 +100,7 @@ export default function PlanAnalyzerTool({ canConfigureSettings, onOpenSettings 
   // students who all pick Gemini once and don't want to re-select it).
   useEffect(() => {
     const saved = window.localStorage.getItem(PROVIDER_STORAGE_KEY);
-    if (saved === "claude" || saved === "gemini") setProvider(saved);
+    if (saved === "claude" || saved === "gemini" || saved === "kimi") setProvider(saved);
   }, []);
 
   useEffect(() => {
